@@ -7,6 +7,61 @@ export interface ProviderOption {
 
 export const PROVIDER_OPTIONS: ProviderOption[] = [
   {
+    id: "azure",
+    name: "Azure",
+    icon: "/provider-icons/azure-app-service.svg",
+    appliesTo: [
+      "database",
+      "data-lake",
+      "file-storage",
+      "ocr",
+      "api-source",
+      "message-queue",
+      "event-stream",
+      "feature-store",
+      "model-training",
+      "model-registry",
+      "batch-inference",
+      "online-inference",
+      "batch-job",
+      "container",
+      "cloud-service",
+      "model-serving",
+      "monitoring",
+      "logging",
+      "dashboard",
+      "api-endpoint",
+      "database-output"
+    ]
+  },
+  {
+    id: "aws",
+    name: "AWS",
+    icon: "/provider-icons/aws-s3.svg",
+    appliesTo: [
+      "database",
+      "data-lake",
+      "file-storage",
+      "api-source",
+      "message-queue",
+      "event-stream",
+      "feature-store",
+      "model-training",
+      "model-registry",
+      "batch-inference",
+      "online-inference",
+      "batch-job",
+      "container",
+      "cloud-service",
+      "model-serving",
+      "monitoring",
+      "logging",
+      "dashboard",
+      "api-endpoint",
+      "database-output"
+    ]
+  },
+  {
     id: "azure-app-service",
     name: "Azure App Service",
     icon: "/provider-icons/azure-app-service.svg",
@@ -58,20 +113,62 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     id: "databricks",
     name: "Databricks",
     icon: "/provider-icons/databricks.svg",
-    appliesTo: ["data-lake", "feature-engineering", "model-training", "batch-inference", "batch-job"]
+    appliesTo: [
+      "database",
+      "data-lake",
+      "file-storage",
+      "data-validation",
+      "data-cleaning",
+      "transformation",
+      "join",
+      "aggregation",
+      "feature-extraction",
+      "feature-engineering",
+      "feature-store",
+      "train-test-split",
+      "model-training",
+      "hyperparameter-search",
+      "model-evaluation",
+      "model-registry",
+      "batch-inference",
+      "batch-job",
+      "monitoring",
+      "data-drift",
+      "model-drift",
+      "quality-monitoring",
+      "cost-monitoring",
+      "dashboard",
+      "database-output"
+    ]
   },
   {
     id: "openai",
     name: "OpenAI",
     icon: "/provider-icons/openai.svg",
-    appliesTo: ["llm", "prompt-template", "embedding-model", "agent"]
+    appliesTo: ["ocr", "llm", "prompt-template", "embedding-model", "agent"]
   }
 ];
+
+export const PROVIDER_ICON_LIBRARY = PROVIDER_OPTIONS.filter((provider, index, providers) => providers.findIndex((item) => item.id === provider.id) === index);
 
 export function getProviderOption(id?: unknown) {
   return PROVIDER_OPTIONS.find((provider) => provider.id === id);
 }
 
 export function getProviderOptionsForNode(definitionId: string) {
+  if (definitionId === "data-lake") {
+    return PROVIDER_OPTIONS.filter((provider) => ["azure", "aws", "databricks"].includes(provider.id));
+  }
+  if (definitionId === "ocr") {
+    return PROVIDER_OPTIONS.filter((provider) => ["azure", "openai"].includes(provider.id));
+  }
   return PROVIDER_OPTIONS.filter((provider) => provider.appliesTo.includes(definitionId));
+}
+
+export function normalizeProviderIdForNode(definitionId: string, providerId?: unknown) {
+  if (definitionId !== "data-lake") return typeof providerId === "string" ? providerId : "";
+  if (providerId === "azure-data-lake" || providerId === "azure-synapse") return "azure";
+  if (providerId === "aws-s3") return "aws";
+  if (providerId === "databricks" || providerId === "azure" || providerId === "aws") return providerId;
+  return "";
 }

@@ -1,8 +1,8 @@
 "use client";
 
-import type { EdgeKind, ValidationIssue, Workflow, WorkflowEdge, WorkflowGroup, WorkflowNode, WorkflowStatus } from "@/domain/types";
+import type { ApprovalChainType, EdgeKind, ValidationIssue, Workflow, WorkflowEdge, WorkflowGroup, WorkflowNode, WorkflowStatus } from "@/domain/types";
 import { createInsuranceClaimSeveritySample } from "@/domain/samples";
-import { createEmptyWorkflow, createNodeFromDefinitionId, duplicateWorkflow, newId, touchWorkflow } from "@/domain/workflow-factory";
+import { createEmptyWorkflow, createNodeFromDefinitionId, duplicateWorkflow, getDefaultStageColor, newId, touchWorkflow } from "@/domain/workflow-factory";
 import { validateWorkflow } from "@/domain/validation";
 import { create } from "zustand";
 
@@ -13,6 +13,11 @@ type SelectedItem =
   | { type: "group"; id: string };
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
+type WorkflowMetaPatch = Partial<
+  Pick<Workflow, "name" | "description" | "owner" | "team" | "status" | "tags" | "version" | "reviewDocuments">
+> & {
+  approvalChainType?: ApprovalChainType;
+};
 
 interface EditorState {
   workflow: Workflow;
@@ -29,11 +34,11 @@ interface EditorState {
   dragStart: Workflow | null;
   clipboardNode: WorkflowNode | null;
   setWorkflow: (workflow: Workflow, resetHistory?: boolean) => void;
-  updateWorkflowMeta: (patch: Partial<Pick<Workflow, "name" | "description" | "owner" | "team" | "status" | "tags" | "version">>) => void;
+  updateWorkflowMeta: (patch: WorkflowMetaPatch) => void;
   addNode: (definitionId: string, position?: { x: number; y: number }) => void;
   updateNode: (id: string, patch: Partial<WorkflowNode["data"]>) => void;
   updateNodeConfiguration: (id: string, key: string, value: unknown) => void;
-  addEdge: (source: string, target: string, type?: EdgeKind) => void;
+  addEdge: (source: string, target: string, type?: EdgeKind, handles?: { sourceHandle?: string | null; targetHandle?: string | null }) => void;
   updateEdge: (id: string, patch: Partial<WorkflowEdge>) => void;
   removeEdge: (id: string) => void;
   addGroup: () => void;
@@ -89,7 +94,7 @@ export const useWorkflowStore = create<EditorState>((set, get) => {
         past: resetHistory ? [] : get().past,
         future: resetHistory ? [] : get().future
       }),
-    updateWorkflowMeta: (patch) => commit(set, get, (workflow) => ({ ...workflow, ...patch })),
+    updateWorkflowMeta: (patch) => commit(set, get, (workflow) => applyWorkflowMetaPatch(workflow, patch)),
     addNode: (definitionId, position = { x: 220, y: 220 }) =>
       commit(set, get, (workflow) => ({
         ...workflow,
@@ -109,7 +114,7 @@ export const useWorkflowStore = create<EditorState>((set, get) => {
             : node
         )
       })),
-    addEdge: (source, target, type = "data") =>
+    addEdge: (source, target, type = "data", handles) =>
       commit(set, get, (workflow) => ({
         ...workflow,
         edges: [
@@ -118,10 +123,11 @@ export const useWorkflowStore = create<EditorState>((set, get) => {
             id: newId("edge"),
             source,
             target,
-            sourceHandle: "out",
-            targetHandle: "in",
+            sourceHandle: handles?.sourceHandle ?? "out",
+            targetHandle: handles?.targetHandle ?? "in",
             type,
-            label: type === "data" ? "Data" : type
+            label: type === "data" ? "Data" : type,
+            curvature: 0.42
           }
         ]
       })),
@@ -136,21 +142,25 @@ export const useWorkflowStore = create<EditorState>((set, get) => {
         edges: workflow.edges.filter((edge) => edge.id !== id)
       })),
     addGroup: () =>
-      commit(set, get, (workflow) => ({
-        ...workflow,
-        groups: [
-          ...workflow.groups,
-          {
-            id: newId("group"),
-            title: "New stage",
-            description: "",
-            position: { x: 120, y: 120 },
-            width: 320,
-            height: 420,
-            color: "#e0f2fe"
-          }
-        ]
-      })),
+      commit(set, get, (workflow) => {
+        const defaultColor = getDefaultStageColor(workflow.groups.length);
+        return {
+          ...workflow,
+          groups: [
+            ...workflow.groups,
+            {
+              id: newId("group"),
+              title: "New stage",
+              description: "",
+              position: { x: 120, y: 120 },
+              width: 320,
+              height: 420,
+              color: defaultColor,
+              defaultColor
+            }
+          ]
+        };
+      }),
     updateGroup: (id, patch) =>
       commit(set, get, (workflow) => ({
         ...workflow,
@@ -355,6 +365,22 @@ function setWorkflowFromAction(
     future: [],
     validationIssues: validateWorkflow(workflow)
   });
+}
+
+function applyWorkflowMetaPatch(workflow: Workflow, patch: WorkflowMetaPatch): Workflow {
+  const next = { ...workflow, ...patch };
+  if (workflow.flowKind === "approval_chain") {
+    return {
+      ...next,
+      flowKind: "approval_chain",
+      approvalChainType: next.approvalChainType ?? workflow.approvalChainType ?? "underwriting"
+    };
+  }
+  return {
+    ...next,
+    flowKind: "ai_workflow",
+    approvalChainType: undefined
+  };
 }
 
 function cloneWorkflow(workflow: Workflow): Workflow {

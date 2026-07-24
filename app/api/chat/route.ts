@@ -49,7 +49,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL ?? "gpt-5",
         instructions:
-          "You are Workflow Canvas Copilot. Help insurance and AI platform teams improve visual workflows. Be concise, practical, and reference the current workflow context when useful. If workflow actions were already applied, explain the result.",
+          "You are Flow Canvas Copilot. Help insurance, AI platform, and approval-chain teams improve visual flows. Be concise, practical, and reference the current flow context when useful. If flow actions were already applied, explain the result.",
         input: buildPrompt(messages, workflowContext),
         max_output_tokens: 700
       })

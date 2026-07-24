@@ -2,8 +2,13 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Workflow Canvas",
-  description: "A visual AI and machine learning workflow design tool"
+  title: "Flow Canvas",
+  description: "A visual flow design tool for AI workflows and approval chains",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg"
+  }
 };
 
 export default function RootLayout({

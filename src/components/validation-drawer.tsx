@@ -22,7 +22,7 @@ export function ValidationDrawer() {
         {!issues.length && (
           <article className="validation-empty">
             <CheckCircle2 size={18} />
-            <span>The workflow passes the current validation rules.</span>
+            <span>The flow passes the current validation rules.</span>
           </article>
         )}
         {issues.map((issue) => (

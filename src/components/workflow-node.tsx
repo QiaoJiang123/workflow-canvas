@@ -1,12 +1,13 @@
 "use client";
 
 import { CATEGORY_COLORS, CATEGORY_LABELS, getNodeDefinition } from "@/domain/node-definitions";
-import { getProviderOption } from "@/domain/providers";
+import { PROVIDER_ICON_LIBRARY, getProviderOption, normalizeProviderIdForNode } from "@/domain/providers";
 import { useWorkflowStore } from "@/store/use-workflow-store";
 import { DynamicIcon } from "./icon";
 import { Handle, NodeProps, Position } from "@xyflow/react";
-import { Bolt, MoreHorizontal } from "lucide-react";
+import { Bolt, MoreVertical } from "lucide-react";
 import Image from "next/image";
+import { useState } from "react";
 
 interface WorkflowNodeData {
   id: string;
@@ -18,6 +19,8 @@ interface WorkflowNodeData {
   providerId?: string;
   status?: string;
   invalid?: boolean;
+  connectionTargetSide?: "left" | "right" | "top" | "bottom";
+  isConnectionSource?: boolean;
 }
 
 export function WorkflowNodeComponent({ data, selected }: NodeProps) {
@@ -26,16 +29,36 @@ export function WorkflowNodeComponent({ data, selected }: NodeProps) {
   const color = CATEGORY_COLORS[node.category];
   const select = useWorkflowStore((state) => state.select);
   const isTrigger = !definition?.inputs.length;
-  const provider = getProviderOption(node.providerId);
+  const provider = getProviderOption(normalizeProviderIdForNode(node.definitionId, node.providerId));
+  const [isHovered, setIsHovered] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [iconsOpen, setIconsOpen] = useState(false);
+  const inputs = definition?.inputs ?? [];
+  const outputs = definition?.outputs ?? [];
 
   return (
     <article
-      className={`workflow-node ${selected ? "is-selected" : ""} ${node.invalid ? "is-invalid" : ""}`}
+      className={`workflow-node ${selected ? "is-selected" : ""} ${isHovered ? "is-hovered" : ""} ${node.invalid ? "is-invalid" : ""} ${node.isConnectionSource ? "is-connection-source" : ""} ${node.connectionTargetSide ? `is-connection-target target-${node.connectionTargetSide}` : ""}`}
       style={{ "--node-accent": color } as React.CSSProperties}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => {
+        setIsHovered(false);
+        setMenuOpen(false);
+        setIconsOpen(false);
+      }}
       onDoubleClick={() => select({ type: "node", id: node.id })}
     >
-      {definition?.inputs.map((input) => (
-        <Handle key={input.id} id={input.id} type="target" position={Position.Left} className="node-handle" />
+      {inputs.map((input) => (
+        <Handle key={input.id} id={input.id} type="target" position={Position.Left} className="node-handle node-handle-left" />
+      ))}
+      {inputs.map((input) => (
+        <Handle key={`${input.id}-right`} id={`${input.id}-right`} type="target" position={Position.Right} className="node-handle node-handle-right" />
+      ))}
+      {inputs.map((input) => (
+        <Handle key={`${input.id}-top`} id={`${input.id}-top`} type="target" position={Position.Top} className="node-handle node-handle-top" />
+      ))}
+      {inputs.map((input) => (
+        <Handle key={`${input.id}-bottom`} id={`${input.id}-bottom`} type="target" position={Position.Bottom} className="node-handle node-handle-bottom" />
       ))}
       {isTrigger && (
         <span className="node-trigger" aria-label="Trigger node" title="Trigger node">
@@ -46,9 +69,46 @@ export function WorkflowNodeComponent({ data, selected }: NodeProps) {
         <span className="node-operation" title={node.technology || CATEGORY_LABELS[node.category]}>
           {formatOperation(node.technology || CATEGORY_LABELS[node.category])}
         </span>
-        <button className="node-menu" type="button" aria-label="Node actions" title="Node actions">
-          <MoreHorizontal size={15} />
-        </button>
+        <div className="node-menu-shell">
+          <button
+            className="node-menu"
+            type="button"
+            aria-label="Node actions"
+            aria-expanded={menuOpen}
+            title="Node actions"
+            onClick={(event) => {
+              event.stopPropagation();
+              setMenuOpen((current) => !current);
+              setIconsOpen(false);
+            }}
+          >
+            <MoreVertical size={15} />
+          </button>
+          {menuOpen && (
+            <div className="node-action-menu" role="menu">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setIconsOpen((current) => !current);
+                }}
+              >
+                Icon
+              </button>
+            </div>
+          )}
+          {iconsOpen && (
+            <div className="node-icon-library" aria-label="Provider icon library">
+              {PROVIDER_ICON_LIBRARY.map((providerOption) => (
+                <span key={providerOption.id} className="provider-icon-swatch" title={providerOption.name}>
+                  <Image src={providerOption.icon} alt="" width={18} height={18} />
+                  <small>{providerOption.name}</small>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
         <span className="node-icon" aria-hidden="true">
           {provider ? <Image src={provider.icon} alt="" width={28} height={28} /> : <DynamicIcon name={definition?.icon ?? "Circle"} />}
         </span>
@@ -58,8 +118,17 @@ export function WorkflowNodeComponent({ data, selected }: NodeProps) {
         <strong title={node.label}>{node.label}</strong>
         <span className={`node-status ${node.status ?? "not_started"}`} title={`Status: ${formatStatus(node.status)}`} />
       </div>
-      {definition?.outputs.map((output) => (
-        <Handle key={output.id} id={output.id} type="source" position={Position.Right} className="node-handle" />
+      {outputs.map((output) => (
+        <Handle key={`${output.id}-left`} id={`${output.id}-left`} type="source" position={Position.Left} className="node-handle node-handle-left" />
+      ))}
+      {outputs.map((output) => (
+        <Handle key={output.id} id={output.id} type="source" position={Position.Right} className="node-handle node-handle-right" />
+      ))}
+      {outputs.map((output) => (
+        <Handle key={`${output.id}-top`} id={`${output.id}-top`} type="source" position={Position.Top} className="node-handle node-handle-top" />
+      ))}
+      {outputs.map((output) => (
+        <Handle key={`${output.id}-bottom`} id={`${output.id}-bottom`} type="source" position={Position.Bottom} className="node-handle node-handle-bottom" />
       ))}
     </article>
   );

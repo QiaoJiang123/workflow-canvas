@@ -3,7 +3,7 @@
 import { CATEGORY_COLORS, CATEGORY_LABELS, NODE_DEFINITIONS, getDefinitionsByCategory } from "@/domain/node-definitions";
 import type { NodeCategory, NodeDefinition } from "@/domain/types";
 import { useWorkflowStore } from "@/store/use-workflow-store";
-import { ChevronDown, Search } from "lucide-react";
+import { BookOpen, ChevronDown, Layers3, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { DynamicIcon } from "./icon";
 
@@ -13,6 +13,7 @@ export function NodeLibrary() {
   const search = useWorkflowStore((state) => state.search);
   const setSearch = useWorkflowStore((state) => state.setSearch);
   const addNode = useWorkflowStore((state) => state.addNode);
+  const addGroup = useWorkflowStore((state) => state.addGroup);
   const libraryCollapsed = useWorkflowStore((state) => state.libraryCollapsed);
   const [collapsed, setCollapsed] = useState<Set<NodeCategory>>(new Set());
   const definitionsByCategory = useMemo(getDefinitionsByCategory, []);
@@ -39,6 +40,31 @@ export function NodeLibrary() {
         <Search size={15} />
         <input id="node-library-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search nodes" />
       </label>
+      <details className="workflow-guide">
+        <summary>
+          <BookOpen size={14} />
+          How to use
+        </summary>
+        <ol>
+          <li>Add stage rectangles first to group a flow phase.</li>
+          <li>Drag nodes from this library onto the canvas, or click a node to add it.</li>
+          <li>Hover a node to reveal side dots, then drag from a dot to another node to create an edge.</li>
+          <li>Select a node, edge, or stage to edit it in the right panel.</li>
+          <li>Use Export PDF or Export JSON from the top toolbar when the flow is ready.</li>
+        </ol>
+      </details>
+      <section className="library-section">
+        <h2>Canvas Structure</h2>
+        <button className="stage-add-card" type="button" onClick={addGroup}>
+          <span className="library-icon">
+            <Layers3 size={16} />
+          </span>
+          <span>
+            <strong>Stage rectangle</strong>
+            <small>Add a large rectangle behind nodes to group a flow phase.</small>
+          </span>
+        </button>
+      </section>
       {!search && (
         <section className="library-section">
           <h2>Frequently Used</h2>

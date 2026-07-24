@@ -1,5 +1,9 @@
 export type WorkflowStatus = "draft" | "in_review" | "approved" | "archived";
 
+export type FlowKind = "ai_workflow" | "approval_chain";
+
+export type ApprovalChainType = "underwriting" | "data_engineering" | "project_approval" | "procurement" | "model_governance";
+
 export type NodeCategory =
   | "data_sources"
   | "data_processing"
@@ -56,6 +60,7 @@ export interface WorkflowEdge {
   label?: string;
   description?: string;
   animated?: boolean;
+  curvature?: number;
 }
 
 export interface WorkflowGroup {
@@ -69,19 +74,40 @@ export interface WorkflowGroup {
   width: number;
   height: number;
   color: string;
+  defaultColor?: string;
   collapsed?: boolean;
 }
 
-export interface Workflow {
+export interface ReviewDocument {
+  id: string;
+  title: string;
+  type: "pdf" | "text" | "doc";
+  url: string;
+  owner?: string;
+  summary?: string;
+}
+
+export interface Approver {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  team: string;
+  approvalChainTypes: ApprovalChainType[];
+}
+
+interface WorkflowBase {
   schemaVersion: "1.0";
   id: string;
   name: string;
   description?: string;
+  flowKind: FlowKind;
   version: string;
   status: WorkflowStatus;
   owner?: string;
   team?: string;
   tags: string[];
+  reviewDocuments?: ReviewDocument[];
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   groups: WorkflowGroup[];
@@ -89,6 +115,18 @@ export interface Workflow {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface AIWorkflow extends WorkflowBase {
+  flowKind: "ai_workflow";
+  approvalChainType?: undefined;
+}
+
+export interface ApprovalChainWorkflow extends WorkflowBase {
+  flowKind: "approval_chain";
+  approvalChainType: ApprovalChainType;
+}
+
+export type Workflow = AIWorkflow | ApprovalChainWorkflow;
 
 export interface WorkflowSummary {
   id: string;

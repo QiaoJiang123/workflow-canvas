@@ -14,6 +14,7 @@ import {
   FolderKanban,
   HelpCircle,
   ImageDown,
+  Layers3,
   LayoutDashboard,
   Moon,
   PanelLeftClose,
@@ -39,6 +40,7 @@ export function EditorHeader({ onImport }: { onImport: (json: string) => void })
   const updateWorkflowMeta = useWorkflowStore((state) => state.updateWorkflowMeta);
   const clear = useWorkflowStore((state) => state.clear);
   const loadSample = useWorkflowStore((state) => state.loadSample);
+  const addGroup = useWorkflowStore((state) => state.addGroup);
   const autoLayout = useWorkflowStore((state) => state.autoLayout);
   const undo = useWorkflowStore((state) => state.undo);
   const redo = useWorkflowStore((state) => state.redo);
@@ -127,18 +129,19 @@ export function EditorHeader({ onImport }: { onImport: (json: string) => void })
         <Workflow size={18} />
       </div>
       <div className="header-title">
-        <strong>Workflow Canvas</strong>
-        <input value={workflow.name} aria-label="Workflow name" onChange={(event) => updateWorkflowMeta({ name: event.target.value })} />
+        <strong>Flow Canvas</strong>
+        <input value={workflow.name} aria-label="Flow name" onChange={(event) => updateWorkflowMeta({ name: event.target.value })} />
       </div>
       <span className={`save-pill ${saveStatus}`}>
         <Save size={14} />
         {saveStatus === "idle" ? "Unsaved" : saveStatus}
       </span>
       <div className="header-actions" role="toolbar" aria-label="Workflow actions">
-        <IconButton label="Workflow manager" onClick={() => window.location.assign("/workflows")} icon={<LayoutDashboard size={16} />} />
+        <IconButton label="Flow manager" onClick={() => window.location.assign("/workflows")} icon={<LayoutDashboard size={16} />} />
         <IconButton label="Toggle library" onClick={toggleLibrary} icon={<PanelLeftClose size={16} />} />
-        <IconButton label="New workflow" onClick={clear} icon={<Plus size={16} />} />
-        <IconButton label="Open claim severity sample" onClick={loadSample} icon={<FolderKanban size={16} />} />
+        <IconButton label="New AI workflow" onClick={clear} icon={<Plus size={16} />} />
+        <IconButton label="Add stage rectangle" onClick={addGroup} icon={<Layers3 size={16} />} />
+        <IconButton label="Open AI workflow sample" onClick={loadSample} icon={<FolderKanban size={16} />} />
         <IconButton label="Undo" onClick={undo} disabled={!past.length} icon={<RotateCcw size={16} />} />
         <IconButton label="Redo" onClick={redo} disabled={!future.length} icon={<RotateCw size={16} />} />
         <IconButton label="Auto-layout" onClick={autoLayout} icon={<Wand2 size={16} />} />

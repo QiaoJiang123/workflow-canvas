@@ -53,7 +53,7 @@ function readWorkflow(id: string): Workflow | null {
   try {
     const raw = localStorage.getItem(`${RECORD_PREFIX}${id}`);
     if (!raw) return null;
-    return workflowSchema.parse(JSON.parse(raw));
+    return workflowSchema.parse(JSON.parse(raw)) as Workflow;
   } catch {
     return null;
   }

@@ -1,6 +1,21 @@
 import { getNodeDefinition } from "./node-definitions";
 import type { NodeDefinition, Workflow, WorkflowGroup, WorkflowNode } from "./types";
 
+export const STAGE_COLOR_OPTIONS = [
+  { value: "#dbeafe", label: "Source blue" },
+  { value: "#cffafe", label: "Ingestion cyan" },
+  { value: "#ccfbf1", label: "Preparation teal" },
+  { value: "#ede9fe", label: "Model purple" },
+  { value: "#fef3c7", label: "Review amber" },
+  { value: "#ffedd5", label: "Deployment orange" },
+  { value: "#dcfce7", label: "Monitoring green" },
+  { value: "#e0e7ff", label: "Output indigo" }
+] as const;
+
+export function getDefaultStageColor(index: number) {
+  return STAGE_COLOR_OPTIONS[Math.max(0, index) % STAGE_COLOR_OPTIONS.length].value;
+}
+
 export function newId(prefix: string) {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
@@ -15,11 +30,14 @@ export function createEmptyWorkflow(name = "Untitled workflow"): Workflow {
     id: newId("workflow"),
     name,
     description: "Document an AI or machine learning workflow.",
+    flowKind: "ai_workflow",
+    approvalChainType: undefined,
     version: "1.0",
     status: "draft",
     owner: "",
     team: "",
     tags: [],
+    reviewDocuments: [],
     nodes: [],
     edges: [],
     groups: createDefaultGroups(),
@@ -60,7 +78,6 @@ export function createNodeFromDefinitionId(definitionId: string, position: { x: 
 
 export function createDefaultGroups(): WorkflowGroup[] {
   const names = ["Source", "Ingestion", "Preparation", "Modeling", "Evaluation", "Deployment", "Monitoring"];
-  const colors = ["#dbeafe", "#cffafe", "#ccfbf1", "#ede9fe", "#fef3c7", "#ffedd5", "#dcfce7"];
   return names.map((title, index) => ({
     id: newId("group"),
     title,
@@ -68,7 +85,8 @@ export function createDefaultGroups(): WorkflowGroup[] {
     position: { x: 80 + index * 320, y: 80 },
     width: 280,
     height: 520,
-    color: colors[index],
+    color: getDefaultStageColor(index),
+    defaultColor: getDefaultStageColor(index),
     collapsed: false
   }));
 }

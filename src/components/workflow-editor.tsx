@@ -2,8 +2,9 @@
 
 import { BrowserWorkflowRepository } from "@/lib/workflow-repository";
 import { useWorkflowStore } from "@/store/use-workflow-store";
-import { createInsuranceClaimSeveritySample } from "@/domain/samples";
+import { createApprovalChainSample, createInsuranceClaimSeveritySample } from "@/domain/samples";
 import { workflowExportSchema, workflowSchema } from "@/domain/schema";
+import type { Workflow } from "@/domain/types";
 import { duplicateWorkflow } from "@/domain/workflow-factory";
 import { EditorHeader } from "./editor-header";
 import { Inspector } from "./inspector";
@@ -42,20 +43,21 @@ export function WorkflowEditor({ workflowId }: { workflowId?: string }) {
     loadedWorkflowRef.current = loadKey;
     setRepositoryReady(false);
 
-    repository.list().then(async (items) => {
-      const targetId = workflowId ?? items[0]?.id;
+    const loadWorkflow = async () => {
+      const targetId = workflowId ?? (await repository.list())[0]?.id;
       const stored = targetId ? await repository.get(targetId) : null;
       if (!stored) {
         setSaveStatus("error");
         setRepositoryReady(true);
         return;
       }
-      const refreshedSample = shouldRefreshStoredSample(stored) ? createInsuranceClaimSeveritySample() : stored;
+      const refreshedSample = shouldRefreshApprovalSample(stored) ? createApprovalChainSample() : shouldRefreshStoredSample(stored) ? createInsuranceClaimSeveritySample() : stored;
       setWorkflow(refreshedSample, true);
       if (refreshedSample !== stored) await repository.save(refreshedSample);
       setSaveStatus("saved");
       setRepositoryReady(true);
-    });
+    };
+    void loadWorkflow();
   }, [setSaveStatus, setWorkflow, workflowId]);
 
   useEffect(() => {
@@ -148,15 +150,25 @@ export function WorkflowEditor({ workflowId }: { workflowId?: string }) {
   );
 }
 
-function parseWorkflowImport(json: string) {
+function parseWorkflowImport(json: string): Workflow {
   const parsed = JSON.parse(json);
   const workflow = "schemaVersion" in parsed ? workflowExportSchema.parse(parsed).workflow : workflowSchema.parse(parsed);
-  return workflow;
+  return workflow as Workflow;
 }
 
-function shouldRefreshStoredSample(workflow: { id?: string; name: string; nodes: Array<{ position: { x: number } }> }) {
+function shouldRefreshStoredSample(workflow: { id?: string; name: string; flowKind?: string; nodes: Array<{ position: { x: number } }> }) {
   if (workflow.id !== "workflow-claim-severity-sample" && workflow.name !== "Insurance claim severity workflow") return false;
+  if (workflow.flowKind !== "ai_workflow") return true;
   if (!workflow.nodes.length) return true;
   const maxX = Math.max(0, ...workflow.nodes.map((node) => node.position.x));
   return maxX > 1900 || workflow.nodes.length < 15;
+}
+
+function shouldRefreshApprovalSample(workflow: { id?: string; name: string; flowKind?: string; approvalChainType?: string; nodes?: Array<{ data?: { configuration?: Record<string, unknown> } }> }) {
+  if (workflow.id !== "flow-underwriting-approval-chain-sample" && workflow.name !== "Underwriting approval chain") return false;
+  return (
+    workflow.flowKind !== "approval_chain" ||
+    workflow.approvalChainType !== "underwriting" ||
+    !workflow.nodes?.every((node) => Array.isArray(node.data?.configuration?.documents) && node.data.configuration.documents.length > 0)
+  );
 }

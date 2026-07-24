@@ -74,6 +74,35 @@ const evaluationFields: NodeFieldDefinition[] = [
   { key: "reviewer", label: "Reviewer", type: "text" }
 ];
 
+const reviewDocumentFields: NodeFieldDefinition[] = [
+  { key: "documentTitle", label: "Document title", type: "text", required: true },
+  { key: "documentType", label: "Document type", type: "select", options: ["pdf", "text", "doc", "policy", "contract"] },
+  { key: "documentUrl", label: "Document URL", type: "url", required: true },
+  { key: "summary", label: "Summary", type: "textarea" }
+];
+
+const approverFields: NodeFieldDefinition[] = [
+  { key: "assignee", label: "Assignee", type: "text", required: true },
+  { key: "role", label: "Role", type: "text" },
+  { key: "dueDate", label: "Due date", type: "text" },
+  { key: "reviewDocumentUrl", label: "Review document URL", type: "url" },
+  { key: "instructions", label: "Instructions", type: "textarea", required: true }
+];
+
+const humanReviewFields: NodeFieldDefinition[] = [
+  { key: "reviewer", label: "Reviewer", type: "text" },
+  { key: "dueDate", label: "Due date", type: "text" },
+  { key: "reviewDocumentUrl", label: "Review document URL", type: "url" },
+  { key: "reviewCriteria", label: "Review criteria", type: "textarea", required: true }
+];
+
+const approvalFields: NodeFieldDefinition[] = [
+  { key: "approver", label: "Approver", type: "text" },
+  { key: "dueDate", label: "Due date", type: "text" },
+  { key: "reviewDocumentUrl", label: "Review document URL", type: "url" },
+  { key: "approvalCriteria", label: "Approval criteria", type: "textarea", required: true }
+];
+
 function node(
   id: string,
   name: string,
@@ -154,8 +183,10 @@ export const NODE_DEFINITIONS: NodeDefinition[] = [
   node("agent", "Agent", "Tool-using reasoning workflow.", "generative_ai", "Workflow", llmFields),
   node("tool", "Tool", "Callable function or API exposed to an agent.", "generative_ai", "Wrench", [{ key: "contract", label: "Tool contract", type: "textarea", required: true }]),
   node("guardrail", "Guardrail", "Policy checks, safety filters, and allowed-action controls.", "generative_ai", "ShieldAlert", [{ key: "policy", label: "Policy", type: "textarea", required: true }]),
-  node("human-review", "Human Review", "Manual review, approval, or exception handling.", "human_review", "UserCheck", [{ key: "reviewCriteria", label: "Review criteria", type: "textarea", required: true }], true),
-  node("approval", "Approval", "Formal human approval gate before deployment or action.", "human_review", "BadgeCheck", [{ key: "approvalCriteria", label: "Approval criteria", type: "textarea", required: true }]),
+  node("human-review", "Human Review", "Manual review, approval, or exception handling.", "human_review", "UserCheck", humanReviewFields, true),
+  node("review-document", "Review Document", "Document, PDF, policy, or packet that a reviewer must inspect.", "documentation", "FileText", reviewDocumentFields, true, ["approval", "pdf", "document", "review"]),
+  node("approver-assignment", "Approver Assignment", "Assign a named reviewer to an approval step with due dates and instructions.", "human_review", "UserPlus", approverFields, true, ["approval", "assignee", "reviewer"]),
+  node("approval", "Approval", "Formal human approval gate before deployment or action.", "human_review", "BadgeCheck", approvalFields),
   node("escalation", "Escalation", "Route uncertain or high-risk cases to a reviewer.", "human_review", "CircleArrowUp", [{ key: "escalationPolicy", label: "Escalation policy", type: "textarea", required: true }]),
   node("feedback", "Feedback", "Collect human corrections or downstream labels.", "human_review", "MessagesSquare", [{ key: "feedbackLoop", label: "Feedback loop", type: "textarea", required: true }]),
   node("ab-test", "A/B Test", "Compare model, prompt, or experience variants.", "evaluation", "FlaskConical", evaluationFields),
