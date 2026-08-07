@@ -2,7 +2,10 @@
 
 import { WorkflowNodeComponent } from "./workflow-node";
 import { StageNodeComponent } from "./stage-node";
+import { buildApprovalSquareConfiguration, getApprovalSquarePreset } from "@/domain/approval-node-presets";
+import { getAuthSession } from "@/lib/local-auth";
 import { useWorkflowStore } from "@/store/use-workflow-store";
+import { parseCustomApprovalBlock } from "@/lib/custom-approval-blocks";
 import type { Workflow } from "@/domain/types";
 import type { Edge, FinalConnectionState, Node, NodeChange, OnConnect, OnConnectEnd, OnConnectStart } from "@xyflow/react";
 import {
@@ -33,6 +36,11 @@ const NODE_TILE_RIGHT_X = 118;
 const NODE_TILE_TOP_Y = 18;
 const NODE_TILE_BOTTOM_Y = 94;
 const NODE_TILE_CENTER_Y = 56;
+const APPROVAL_TILE_LEFT_X = 8;
+const APPROVAL_TILE_RIGHT_X = 140;
+const APPROVAL_TILE_TOP_Y = 24;
+const APPROVAL_TILE_BOTTOM_Y = 106;
+const APPROVAL_TILE_CENTER_Y = 65;
 
 type ConnectionSide = "left" | "right" | "top" | "bottom";
 
@@ -61,6 +69,14 @@ type EdgeEndpointDrag = {
   fixedPoint: { x: number; y: number };
   fixedSide: ConnectionSide;
   currentPoint: { x: number; y: number };
+};
+
+type AlignmentGuide = {
+  id: string;
+  orientation: "vertical" | "horizontal";
+  position: number;
+  start: number;
+  end: number;
 };
 
 export function WorkflowCanvas() {
@@ -92,6 +108,7 @@ function CanvasInner() {
   const [connectionTarget, setConnectionTarget] = useState<ConnectionTarget | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState("");
   const [hoveredEndpointEdgeId, setHoveredEndpointEdgeId] = useState("");
+  const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
   const dragConnectionStartRef = useRef<DragConnectionStart | null>(null);
   const draftConnectionRef = useRef<DraftConnection | null>(null);
   const edgeEndpointDragRef = useRef<EdgeEndpointDrag | null>(null);
@@ -129,16 +146,20 @@ function CanvasInner() {
         position: node.position,
         width: WORKFLOW_NODE_WIDTH,
         height: WORKFLOW_NODE_HEIGHT,
-        zIndex: 2,
+        zIndex: 20,
         selected: selectedItem.type === "node" && selectedItem.id === node.id,
         data: {
           id: node.id,
           definitionId: node.definitionId,
           label: node.data.label,
+          flowKind: workflow.flowKind,
           category: node.data.category,
           description: node.data.description,
+          owner: node.data.owner,
+          workflowOwner: workflow.owner,
           technology: node.data.technology,
           status: node.data.status,
+          configuration: node.data.configuration,
           providerId: String(node.data.configuration.providerId ?? ""),
           invalid: invalidNodeIds.has(node.id),
           connectionTargetSide: connectionTarget?.id === node.id ? connectionTarget.side : undefined,
@@ -146,7 +167,7 @@ function CanvasInner() {
         }
       }))
     ],
-    [connectionTarget, draftConnection, invalidNodeIds, selectedItem, workflow.groups, workflow.nodes]
+    [connectionTarget, draftConnection, invalidNodeIds, selectedItem, workflow.flowKind, workflow.groups, workflow.nodes, workflow.owner]
   );
 
   const edges: Edge[] = useMemo(
@@ -163,6 +184,7 @@ function CanvasInner() {
         data: { kind: edge.type },
         selected: selectedItem.type === "edge" && selectedItem.id === edge.id,
         className: `workflow-edge ${edge.type}`,
+        zIndex: 1,
         markerEnd: { type: MarkerType.ArrowClosed },
         labelBgPadding: [8, 5],
         labelBgBorderRadius: 6,
@@ -255,7 +277,7 @@ function CanvasInner() {
 
       const fixedKind = endpoint === "source" ? "target" : "source";
       const fixedHandle = endpoint === "source" ? edge.targetHandle : edge.sourceHandle;
-      const fixedPoint = getHandlePoint(fixedNode.position, fixedHandle, fixedKind);
+      const fixedPoint = getHandlePoint(fixedNode.position, fixedHandle, fixedKind, workflow.flowKind);
       const shellElement = event.currentTarget.closest<HTMLElement>(".canvas-shell") ?? event.currentTarget;
       const shellRect = shellElement.getBoundingClientRect();
       const nextDrag: EdgeEndpointDrag = {
@@ -274,7 +296,7 @@ function CanvasInner() {
       setEdgeEndpointDrag(nextDrag);
       setConnectionTarget(null);
     },
-    [select, viewport, workflow.edges, workflow.nodes]
+    [select, viewport, workflow.edges, workflow.flowKind, workflow.nodes]
   );
 
   const beginEndpointBranch = useCallback(
@@ -286,7 +308,7 @@ function CanvasInner() {
 
       const handleType = endpoint === "source" ? "source" : "target";
       const handleId = endpoint === "source" ? edge.sourceHandle : edge.targetHandle;
-      const startPoint = getHandlePoint(startNode.position, handleId, handleType);
+      const startPoint = getHandlePoint(startNode.position, handleId, handleType, workflow.flowKind);
       const shellElement = event.currentTarget.closest<HTMLElement>(".canvas-shell") ?? event.currentTarget;
       const shellRect = shellElement.getBoundingClientRect();
       const nextDraft: DraftConnection = {
@@ -307,7 +329,7 @@ function CanvasInner() {
       setConnectionTarget(null);
       setDraftConnection(nextDraft);
     },
-    [select, viewport, workflow.edges, workflow.nodes]
+    [select, viewport, workflow.edges, workflow.flowKind, workflow.nodes]
   );
 
   const deleteEndpointEdge = useCallback(
@@ -479,7 +501,12 @@ function CanvasInner() {
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       for (const change of changes) {
-        if (change.type === "position" && change.position) moveItemLive(change.id, change.position);
+        if (change.type === "position" && change.position) {
+          moveItemLive(change.id, change.position);
+          if (workflow.nodes.some((node) => node.id === change.id)) {
+            setAlignmentGuides(buildAlignmentGuides(change.id, change.position, workflow));
+          }
+        }
         if (change.type === "dimensions" && change.dimensions) resizeGroupLive(change.id, change.dimensions.width, change.dimensions.height);
         if (change.type === "select" && change.selected) {
           const isGroup = workflow.groups.some((group) => group.id === change.id);
@@ -487,7 +514,7 @@ function CanvasInner() {
         }
       }
     },
-    [moveItemLive, resizeGroupLive, select, workflow.groups]
+    [moveItemLive, resizeGroupLive, select, workflow]
   );
 
   return (
@@ -508,21 +535,66 @@ function CanvasInner() {
       }}
       onDrop={(event) => {
         event.preventDefault();
+        const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+        const currentUserName = getAuthSession()?.user.name || workflow.owner || "System";
+        const approvalPresetId = event.dataTransfer.getData("application/workflow-approval-preset");
+        const customApprovalBlock = parseCustomApprovalBlock(event.dataTransfer.getData("application/workflow-approval-custom-block"));
+        if (customApprovalBlock) {
+          addNode(customApprovalBlock.definitionId, position, {
+            label: customApprovalBlock.label,
+            description: customApprovalBlock.description,
+            status: customApprovalBlock.status,
+            configuration: {
+              ...customApprovalBlock.configuration,
+              ...buildApprovalSquareConfiguration({
+                label: customApprovalBlock.label,
+                description: customApprovalBlock.description,
+                creator: currentUserName,
+                approvalType: String(customApprovalBlock.configuration.approvalType ?? customApprovalBlock.label),
+                status: String(customApprovalBlock.configuration.approvalStatus ?? customApprovalBlock.configuration.status ?? "not_reviewed"),
+                instructions: String(customApprovalBlock.configuration.instructions ?? customApprovalBlock.configuration.reviewCriteria ?? customApprovalBlock.configuration.approvalCriteria ?? customApprovalBlock.description),
+                documents: Array.isArray(customApprovalBlock.configuration.documents) ? customApprovalBlock.configuration.documents : [],
+                actor: currentUserName
+              })
+            }
+          });
+          return;
+        }
+        if (approvalPresetId) {
+          const preset = getApprovalSquarePreset(approvalPresetId);
+          if (!preset) return;
+          addNode(preset.definitionId, position, {
+            label: preset.label,
+            description: preset.description,
+            status: preset.status,
+            configuration: {
+              ...preset.configuration,
+              ...buildApprovalSquareConfiguration({
+                label: preset.label,
+                description: preset.description,
+                creator: currentUserName,
+                approvalType: String(preset.configuration.approvalType ?? preset.label),
+                status: String(preset.configuration.approvalStatus ?? preset.configuration.status ?? "not_reviewed"),
+                instructions: String(preset.configuration.instructions ?? preset.configuration.reviewCriteria ?? preset.configuration.approvalCriteria ?? preset.description),
+                documents: Array.isArray(preset.configuration.documents) ? preset.configuration.documents : [],
+                actor: currentUserName
+              })
+            }
+          });
+          return;
+        }
         const definitionId = event.dataTransfer.getData("application/workflow-node");
         if (!definitionId) return;
-        addNode(definitionId, screenToFlowPosition({ x: event.clientX, y: event.clientY }));
+        addNode(definitionId, position);
       }}
     >
       {!workflow.nodes.length && (
         <div className="canvas-empty-state">
-          <strong>Start designing your flow</strong>
-          <span>Drag a node from the library or open an AI workflow or approval-chain sample.</span>
+          <strong>Start with a blank canvas</strong>
+          <span>{workflow.flowKind === "approval_chain" ? "Drag an approval square from the library, create a custom square, or add the first approval step." : "Drag a node from the library or add the first data source."}</span>
           <div>
-            <button type="button" onClick={() => addNode("database", { x: 160, y: 180 })}>
-              Add Database
-            </button>
-            <button type="button" onClick={loadSample}>
-              Open Sample
+            <button type="button" onClick={() => addNode(workflow.flowKind === "approval_chain" ? "approver-assignment" : "database", { x: 160, y: 180 })}>
+              {workflow.flowKind === "approval_chain" ? "Add Approval Step" : "Add Database"}
             </button>
           </div>
         </div>
@@ -546,8 +618,14 @@ function CanvasInner() {
         edges={edges}
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
-        onNodeDragStart={beginMove}
-        onNodeDragStop={endMove}
+        onNodeDragStart={() => {
+          beginMove();
+          setAlignmentGuides([]);
+        }}
+        onNodeDragStop={() => {
+          setAlignmentGuides([]);
+          endMove();
+        }}
         onConnect={onConnect}
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
@@ -565,6 +643,7 @@ function CanvasInner() {
         maxZoom={1.8}
         proOptions={{ hideAttribution: true }}
       >
+        <AlignmentGuideLayer guides={alignmentGuides} viewport={viewport} />
         <Background variant={BackgroundVariant.Dots} gap={40} size={0.7} color="var(--canvas-dot)" />
         <Controls showInteractive={false} onFitView={() => fitView({ padding: 0.16 })} />
         <MiniMap pannable zoomable nodeStrokeWidth={2} className="workflow-minimap" />
@@ -598,8 +677,8 @@ function EdgeEndpointControls({
       const source = nodesById.get(edge.source);
       const target = nodesById.get(edge.target);
       if (!source || !target) return [];
-      const sourcePoint = getHandlePoint(source.position, edge.sourceHandle, "source");
-      const targetPoint = getHandlePoint(target.position, edge.targetHandle, "target");
+      const sourcePoint = getHandlePoint(source.position, edge.sourceHandle, "source", workflow.flowKind);
+      const targetPoint = getHandlePoint(target.position, edge.targetHandle, "target", workflow.flowKind);
       return [
         {
           edgeId: edge.id,
@@ -636,7 +715,7 @@ function EdgeEndpointControls({
       const position = getStackedEndpointPosition(endpoint.x, endpoint.y, endpoint.side, stackIndex, siblings.length);
       return { ...endpoint, ...position, stackCount: siblings.length, stackIndex };
     });
-  }, [activeEdgeId, nodesById, selectedEdgeId, viewport.x, viewport.y, viewport.zoom, workflow.edges]);
+  }, [activeEdgeId, nodesById, selectedEdgeId, viewport.x, viewport.y, viewport.zoom, workflow.edges, workflow.flowKind]);
 
   if (!endpoints.length) return null;
 
@@ -727,6 +806,29 @@ function EndpointDragLayer({ drag, target }: { drag: EdgeEndpointDrag | null; ta
   );
 }
 
+function AlignmentGuideLayer({ guides, viewport }: { guides: AlignmentGuide[]; viewport: { x: number; y: number; zoom: number } }) {
+  if (!guides.length) return null;
+  return (
+    <div className="alignment-guide-layer" aria-hidden="true">
+      {guides.map((guide) => {
+        const style =
+          guide.orientation === "vertical"
+            ? {
+                left: guide.position * viewport.zoom + viewport.x,
+                top: guide.start * viewport.zoom + viewport.y,
+                height: Math.max(1, (guide.end - guide.start) * viewport.zoom)
+              }
+            : {
+                left: guide.start * viewport.zoom + viewport.x,
+                top: guide.position * viewport.zoom + viewport.y,
+                width: Math.max(1, (guide.end - guide.start) * viewport.zoom)
+              };
+        return <span key={guide.id} className={`alignment-guide ${guide.orientation}`} style={style} />;
+      })}
+    </div>
+  );
+}
+
 function ModelEdgeLayer({
   workflow,
   viewport,
@@ -744,8 +846,8 @@ function ModelEdgeLayer({
       const source = nodesById.get(edge.source);
       const target = nodesById.get(edge.target);
       if (!source || !target) return null;
-      const sourcePoint = getHandlePoint(source.position, edge.sourceHandle, "source");
-      const targetPoint = getHandlePoint(target.position, edge.targetHandle, "target");
+      const sourcePoint = getHandlePoint(source.position, edge.sourceHandle, "source", workflow.flowKind);
+      const targetPoint = getHandlePoint(target.position, edge.targetHandle, "target", workflow.flowKind);
       const sourceX = sourcePoint.x * viewport.zoom + viewport.x;
       const sourceY = sourcePoint.y * viewport.zoom + viewport.y;
       const targetX = targetPoint.x * viewport.zoom + viewport.x;
@@ -776,18 +878,98 @@ function ModelEdgeLayer({
   );
 }
 
-function getHandlePoint(position: { x: number; y: number }, handleId: string | undefined, kind: "source" | "target") {
+function buildAlignmentGuides(draggedNodeId: string, nextPosition: { x: number; y: number }, workflow: Workflow): AlignmentGuide[] {
+  const draggedNode = workflow.nodes.find((node) => node.id === draggedNodeId);
+  if (!draggedNode) return [];
+  const draggedRect = nodeRect(nextPosition);
+  const guides: AlignmentGuide[] = [];
+  let bestVertical: { distance: number; guide: AlignmentGuide } | null = null;
+  let bestHorizontal: { distance: number; guide: AlignmentGuide } | null = null;
+
+  for (const node of workflow.nodes) {
+    if (node.id === draggedNodeId) continue;
+    const rect = nodeRect(node.position);
+    for (const draggedAnchor of rectAnchorsX(draggedRect)) {
+      for (const targetAnchor of rectAnchorsX(rect)) {
+        const distance = Math.abs(draggedAnchor.value - targetAnchor.value);
+        if (distance > 6) continue;
+        const guide = {
+          id: `v-${targetAnchor.name}-${node.id}`,
+          orientation: "vertical" as const,
+          position: targetAnchor.value,
+          start: Math.min(draggedRect.top, rect.top) - 28,
+          end: Math.max(draggedRect.bottom, rect.bottom) + 28
+        };
+        if (!bestVertical || distance < bestVertical.distance) bestVertical = { distance, guide };
+      }
+    }
+    for (const draggedAnchor of rectAnchorsY(draggedRect)) {
+      for (const targetAnchor of rectAnchorsY(rect)) {
+        const distance = Math.abs(draggedAnchor.value - targetAnchor.value);
+        if (distance > 6) continue;
+        const guide = {
+          id: `h-${targetAnchor.name}-${node.id}`,
+          orientation: "horizontal" as const,
+          position: targetAnchor.value,
+          start: Math.min(draggedRect.left, rect.left) - 28,
+          end: Math.max(draggedRect.right, rect.right) + 28
+        };
+        if (!bestHorizontal || distance < bestHorizontal.distance) bestHorizontal = { distance, guide };
+      }
+    }
+  }
+
+  if (bestVertical) guides.push(bestVertical.guide);
+  if (bestHorizontal) guides.push(bestHorizontal.guide);
+  return guides;
+}
+
+function nodeRect(position: { x: number; y: number }) {
+  return {
+    left: position.x,
+    right: position.x + WORKFLOW_NODE_WIDTH,
+    top: position.y,
+    bottom: position.y + WORKFLOW_NODE_HEIGHT,
+    centerX: position.x + WORKFLOW_NODE_WIDTH / 2,
+    centerY: position.y + WORKFLOW_NODE_HEIGHT / 2
+  };
+}
+
+function rectAnchorsX(rect: ReturnType<typeof nodeRect>) {
+  return [
+    { name: "left", value: rect.left },
+    { name: "center", value: rect.centerX },
+    { name: "right", value: rect.right }
+  ];
+}
+
+function rectAnchorsY(rect: ReturnType<typeof nodeRect>) {
+  return [
+    { name: "top", value: rect.top },
+    { name: "middle", value: rect.centerY },
+    { name: "bottom", value: rect.bottom }
+  ];
+}
+
+function getHandlePoint(position: { x: number; y: number }, handleId: string | undefined, kind: "source" | "target", flowKind: Workflow["flowKind"]) {
   const side = getHandleSide(handleId, kind);
+  const isApprovalChain = flowKind === "approval_chain";
+  const leftX = isApprovalChain ? APPROVAL_TILE_LEFT_X : NODE_TILE_LEFT_X;
+  const rightX = isApprovalChain ? APPROVAL_TILE_RIGHT_X : NODE_TILE_RIGHT_X;
+  const topY = isApprovalChain ? APPROVAL_TILE_TOP_Y : NODE_TILE_TOP_Y;
+  const bottomY = isApprovalChain ? APPROVAL_TILE_BOTTOM_Y : NODE_TILE_BOTTOM_Y;
+  const centerY = isApprovalChain ? APPROVAL_TILE_CENTER_Y : NODE_TILE_CENTER_Y;
+
   if (side === "top") {
-    return { x: position.x + WORKFLOW_NODE_CENTER_X, y: position.y + NODE_TILE_TOP_Y, side };
+    return { x: position.x + WORKFLOW_NODE_CENTER_X, y: position.y + topY, side };
   }
   if (side === "bottom") {
-    return { x: position.x + WORKFLOW_NODE_CENTER_X, y: position.y + NODE_TILE_BOTTOM_Y, side };
+    return { x: position.x + WORKFLOW_NODE_CENTER_X, y: position.y + bottomY, side };
   }
   if (side === "right") {
-    return { x: position.x + NODE_TILE_RIGHT_X, y: position.y + NODE_TILE_CENTER_Y, side };
+    return { x: position.x + rightX, y: position.y + centerY, side };
   }
-  return { x: position.x + NODE_TILE_LEFT_X, y: position.y + NODE_TILE_CENTER_Y, side };
+  return { x: position.x + leftX, y: position.y + centerY, side };
 }
 
 function getHandleSide(handleId: string | undefined, kind: "source" | "target") {

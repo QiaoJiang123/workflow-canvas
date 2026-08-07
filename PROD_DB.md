@@ -10,6 +10,14 @@ This app is currently local-browser first. For production on the Azure family, u
 | `workflow-canvas:workflow:{workflowId}` in `localStorage` | Azure Cosmos DB for NoSQL | Database: `flow_canvas_prod`; Container: `workflows` | Stores the full workflow JSON graph: groups, nodes, edges, viewport, review documents, approval-chain metadata. Partition key: `/teamId` or `/ownerId`. |
 | `workflow-canvas:litesql:approvers` local LiteSQL table | Azure SQL Database | Database: `flow_canvas_identity_prod`; Table: `dbo.approvers` | Stores approvers that can be assigned to approval-chain nodes. This is the production replacement for the local approver table. |
 | `Approver.approvalChainTypes[]` array | Azure SQL Database | Database: `flow_canvas_identity_prod`; Table: `dbo.approver_chain_types` | Many-to-many mapping between approvers and chain types such as underwriting, data engineering, project approval, procurement, and model governance. |
+| `workflow-canvas:litesql:approval-chains` local LiteSQL table | Azure SQL Database | Database: `flow_canvas_identity_prod`; Table: `dbo.approval_chains` | One relational row per approval-chain workflow for chain type, owner, status, and lifecycle lookup. |
+| `workflow-canvas:litesql:approval-squares` local LiteSQL table | Azure SQL Database | Database: `flow_canvas_identity_prod`; Table: `dbo.approval_squares` | One row per approval square with creator, approver, status, due date, and the canvas node id. |
+| `workflow-canvas:litesql:documents` local LiteSQL table | Azure SQL Database | Database: `flow_canvas_identity_prod`; Table: `dbo.documents` | Stores unique document metadata and blob URLs for PDF/DOCX/text assets. |
+| `workflow-canvas:litesql:square-documents` local LiteSQL table | Azure SQL Database | Database: `flow_canvas_identity_prod`; Table: `dbo.square_documents` | Join table that links a document to one square; this controls which documents are visible inside each square. |
+| `workflow-canvas:litesql:agent-runs` local LiteSQL table | Azure SQL Database | Database: `flow_canvas_identity_prod`; Table: `dbo.agent_runs` | One row per Copilot plan/execution with prompt, selected agent, execution mode, user, status, and timestamps. |
+| `workflow-canvas:litesql:agent-steps` local LiteSQL table | Azure SQL Database | Database: `flow_canvas_identity_prod`; Table: `dbo.agent_steps` | Specialist routing and orchestration steps for each agent run. |
+| `workflow-canvas:litesql:agent-actions` local LiteSQL table | Azure SQL Database | Database: `flow_canvas_identity_prod`; Table: `dbo.agent_actions` | Typed proposed/applied actions with target, payload JSON, role, and status. |
+| `workflow-canvas:litesql:agent-tool-calls` local LiteSQL table | Azure SQL Database | Database: `flow_canvas_identity_prod`; Table: `dbo.agent_tool_calls` | Local/MCP tool call records with input/output JSON and status. |
 | Future app users / login profile | Azure SQL Database | Database: `flow_canvas_identity_prod`; Table: `dbo.users` | Stores app user profile records that map to Microsoft Entra ID object IDs. Do not store passwords here. |
 | Approval node PDF/DOCX files in `public/review-documents/**` | Azure Blob Storage | Storage account: `stflowcanvasprod`; Container: `review-documents` | Stores SOPs, PDFs, DOCX review packets, and uploaded approval evidence. Store only blob URL or blob key in workflow node JSON. |
 | Exported workflow PDFs/images | Azure Blob Storage | Storage account: `stflowcanvasprod`; Container: `exports` | Stores generated PDF/image exports if export history is needed in production. |
@@ -35,7 +43,15 @@ This app is currently local-browser first. For production on the Azure family, u
      - `dbo.users`
      - `dbo.approvers`
      - `dbo.approver_chain_types`
-     - `dbo.approval_assignments`
+     - `dbo.approval_chains`
+     - `dbo.approval_squares`
+     - `dbo.documents`
+     - `dbo.square_documents`
+     - `dbo.approval_audit_events`
+     - `dbo.agent_runs`
+     - `dbo.agent_steps`
+     - `dbo.agent_actions`
+     - `dbo.agent_tool_calls`
    - Why: users, approvers, roles, teams, and assignment history are relational and need clean SQL lookup/query behavior.
 
 3. Azure Storage Account
@@ -87,17 +103,119 @@ CREATE TABLE dbo.approver_chain_types (
   CONSTRAINT fk_approver_chain_types_approvers FOREIGN KEY (approver_id) REFERENCES dbo.approvers(id)
 );
 
-CREATE TABLE dbo.approval_assignments (
+CREATE TABLE dbo.approval_chains (
+  id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+  workflow_id NVARCHAR(120) NOT NULL UNIQUE,
+  name NVARCHAR(240) NOT NULL,
+  approval_chain_type NVARCHAR(80) NOT NULL,
+  owner_user_id UNIQUEIDENTIFIER NULL,
+  status NVARCHAR(40) NOT NULL DEFAULT 'draft',
+  created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  CONSTRAINT fk_approval_chains_owner FOREIGN KEY (owner_user_id) REFERENCES dbo.users(id)
+);
+
+CREATE TABLE dbo.approval_squares (
   id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
   workflow_id NVARCHAR(120) NOT NULL,
   node_id NVARCHAR(120) NOT NULL,
+  name NVARCHAR(240) NOT NULL,
+  creator_user_id UNIQUEIDENTIFIER NULL,
   approver_id UNIQUEIDENTIFIER NOT NULL,
   approval_status NVARCHAR(40) NOT NULL DEFAULT 'not_reviewed',
   due_date DATE NULL,
   assigned_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
   decided_at DATETIME2 NULL,
   decision_notes NVARCHAR(MAX) NULL,
-  CONSTRAINT fk_approval_assignments_approvers FOREIGN KEY (approver_id) REFERENCES dbo.approvers(id)
+  CONSTRAINT uq_approval_squares_workflow_node UNIQUE (workflow_id, node_id),
+  CONSTRAINT fk_approval_squares_creator FOREIGN KEY (creator_user_id) REFERENCES dbo.users(id),
+  CONSTRAINT fk_approval_squares_approvers FOREIGN KEY (approver_id) REFERENCES dbo.approvers(id)
+);
+
+CREATE TABLE dbo.documents (
+  id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+  workflow_id NVARCHAR(120) NOT NULL,
+  title NVARCHAR(260) NOT NULL,
+  document_type NVARCHAR(40) NOT NULL,
+  blob_url NVARCHAR(1200) NOT NULL,
+  summary NVARCHAR(MAX) NULL,
+  uploaded_by_user_id UNIQUEIDENTIFIER NULL,
+  uploaded_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  CONSTRAINT fk_documents_uploaded_by FOREIGN KEY (uploaded_by_user_id) REFERENCES dbo.users(id)
+);
+
+CREATE TABLE dbo.square_documents (
+  square_id UNIQUEIDENTIFIER NOT NULL,
+  document_id UNIQUEIDENTIFIER NOT NULL,
+  assigned_by_user_id UNIQUEIDENTIFIER NULL,
+  assigned_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  PRIMARY KEY (square_id, document_id),
+  CONSTRAINT fk_square_documents_square FOREIGN KEY (square_id) REFERENCES dbo.approval_squares(id),
+  CONSTRAINT fk_square_documents_document FOREIGN KEY (document_id) REFERENCES dbo.documents(id),
+  CONSTRAINT fk_square_documents_assigned_by FOREIGN KEY (assigned_by_user_id) REFERENCES dbo.users(id)
+);
+
+CREATE TABLE dbo.approval_audit_events (
+  id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+  square_id UNIQUEIDENTIFIER NOT NULL,
+  actor_user_id UNIQUEIDENTIFIER NULL,
+  action NVARCHAR(80) NOT NULL,
+  note NVARCHAR(MAX) NULL,
+  created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  CONSTRAINT fk_approval_audit_events_square FOREIGN KEY (square_id) REFERENCES dbo.approval_squares(id),
+  CONSTRAINT fk_approval_audit_events_actor FOREIGN KEY (actor_user_id) REFERENCES dbo.users(id)
+);
+
+CREATE TABLE dbo.agent_runs (
+  id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+  workflow_id NVARCHAR(120) NOT NULL,
+  user_id UNIQUEIDENTIFIER NULL,
+  user_name NVARCHAR(200) NULL,
+  selected_agent NVARCHAR(80) NOT NULL,
+  execution_mode NVARCHAR(40) NOT NULL,
+  prompt NVARCHAR(MAX) NOT NULL,
+  status NVARCHAR(40) NOT NULL,
+  created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  completed_at DATETIME2 NULL,
+  CONSTRAINT fk_agent_runs_user FOREIGN KEY (user_id) REFERENCES dbo.users(id)
+);
+
+CREATE TABLE dbo.agent_steps (
+  id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+  agent_run_id UNIQUEIDENTIFIER NOT NULL,
+  workflow_id NVARCHAR(120) NOT NULL,
+  agent_role NVARCHAR(80) NOT NULL,
+  title NVARCHAR(240) NOT NULL,
+  summary NVARCHAR(MAX) NOT NULL,
+  status NVARCHAR(40) NOT NULL,
+  CONSTRAINT fk_agent_steps_run FOREIGN KEY (agent_run_id) REFERENCES dbo.agent_runs(id)
+);
+
+CREATE TABLE dbo.agent_actions (
+  id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+  agent_run_id UNIQUEIDENTIFIER NOT NULL,
+  workflow_id NVARCHAR(120) NOT NULL,
+  action_kind NVARCHAR(80) NOT NULL,
+  agent_role NVARCHAR(80) NOT NULL,
+  target_type NVARCHAR(80) NOT NULL,
+  target_id NVARCHAR(120) NULL,
+  title NVARCHAR(240) NOT NULL,
+  status NVARCHAR(40) NOT NULL,
+  payload_json NVARCHAR(MAX) NOT NULL,
+  CONSTRAINT fk_agent_actions_run FOREIGN KEY (agent_run_id) REFERENCES dbo.agent_runs(id)
+);
+
+CREATE TABLE dbo.agent_tool_calls (
+  id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+  agent_run_id UNIQUEIDENTIFIER NOT NULL,
+  workflow_id NVARCHAR(120) NOT NULL,
+  tool_name NVARCHAR(160) NOT NULL,
+  agent_role NVARCHAR(80) NOT NULL,
+  status NVARCHAR(40) NOT NULL,
+  input_json NVARCHAR(MAX) NOT NULL,
+  output_json NVARCHAR(MAX) NULL,
+  created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  CONSTRAINT fk_agent_tool_calls_run FOREIGN KEY (agent_run_id) REFERENCES dbo.agent_runs(id)
 );
 ```
 

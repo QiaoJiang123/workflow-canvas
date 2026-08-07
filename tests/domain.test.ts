@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { APPROVAL_SQUARE_PRESETS, buildApprovalSquareConfiguration, getApprovalSquareGroups, normalizeApprovalSquareData } from "@/domain/approval-node-presets";
 import { NODE_DEFINITIONS, getNodeDefinition } from "@/domain/node-definitions";
 import { workflowExportSchema, workflowSchema } from "@/domain/schema";
 import { createInsuranceClaimSeveritySample } from "@/domain/samples";
@@ -62,5 +63,37 @@ describe("workflow domain", () => {
 
     expect(issues.some((issue) => issue.title === "Duplicate edge")).toBe(true);
     expect(issues.some((issue) => issue.title === "Circular dependency")).toBe(true);
+  });
+
+  it("groups approval-chain square presets by process phase", () => {
+    const groups = getApprovalSquareGroups();
+
+    expect(APPROVAL_SQUARE_PRESETS.length).toBeGreaterThanOrEqual(12);
+    expect(groups.Intake.some((preset) => preset.label === "Request Intake")).toBe(true);
+    expect(groups.Review.some((preset) => preset.label === "Security Review")).toBe(true);
+    expect(groups.Approval.some((preset) => preset.label === "Executive Approval")).toBe(true);
+    expect(groups.Audit.some((preset) => preset.label === "Audit Record")).toBe(true);
+  });
+
+  it("normalizes approval square data for inspector, queue, and exports", () => {
+    const configuration = buildApprovalSquareConfiguration({
+      label: "Risk Committee Approval",
+      description: "Committee signs off on residual risk.",
+      creator: "Qiao Jiang",
+      approver: "Chad Gordon",
+      status: "in_review",
+      dueDate: "2026-08-15",
+      decision: "pending",
+      comments: "Waiting for evidence packet."
+    });
+
+    const normalized = normalizeApprovalSquareData(configuration, { label: "Fallback" });
+
+    expect(normalized.creator).toBe("Qiao Jiang");
+    expect(normalized.approver).toBe("Chad Gordon");
+    expect(normalized.approvalType).toBe("Risk Committee Approval");
+    expect(normalized.status).toBe("in_review");
+    expect(normalized.dueDate).toBe("2026-08-15");
+    expect(normalized.auditTrail[0].action).toBe("created");
   });
 });

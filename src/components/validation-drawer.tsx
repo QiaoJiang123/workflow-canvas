@@ -25,10 +25,10 @@ export function ValidationDrawer() {
             <span>The flow passes the current validation rules.</span>
           </article>
         )}
-        {issues.map((issue) => (
+        {issues.map((issue, index) => (
           <button
             type="button"
-            key={issue.id}
+            key={`${issue.id}-${index}`}
             className={`validation-item ${issue.severity}`}
             onClick={() => {
               if (issue.targetType === "node" && issue.targetId) select({ type: "node", id: issue.targetId });

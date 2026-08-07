@@ -34,4 +34,26 @@ describe("workflow store", () => {
     expect(nodes).toHaveLength(2);
     expect(new Set(nodes.map((item) => item.id)).size).toBe(2);
   });
+
+  it("stores one uploaded document and links it to multiple squares", () => {
+    act(() => {
+      useWorkflowStore.getState().addNode("database", { x: 0, y: 0 });
+      useWorkflowStore.getState().addNode("llm", { x: 200, y: 0 });
+    });
+    const nodeIds = useWorkflowStore.getState().workflow.nodes.map((node) => node.id);
+    const document = {
+      id: "doc-risk-sop",
+      title: "Risk SOP",
+      type: "pdf" as const,
+      url: "data:application/pdf;base64,JVBERi0x",
+      summary: "Review instructions"
+    };
+
+    act(() => useWorkflowStore.getState().linkDocumentToNodes(document, nodeIds));
+
+    const workflow = useWorkflowStore.getState().workflow;
+    expect(workflow.reviewDocuments).toEqual([document]);
+    expect(workflow.nodes.every((node) => Array.isArray(node.data.configuration.documents))).toBe(true);
+    expect(workflow.nodes.every((node) => (node.data.configuration.documents as typeof workflow.reviewDocuments)?.[0]?.id === document.id)).toBe(true);
+  });
 });

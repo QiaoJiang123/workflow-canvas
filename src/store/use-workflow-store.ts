@@ -1,6 +1,6 @@
 "use client";
 
-import type { ApprovalChainType, EdgeKind, ValidationIssue, Workflow, WorkflowEdge, WorkflowGroup, WorkflowNode, WorkflowStatus } from "@/domain/types";
+import type { ApprovalChainType, EdgeKind, ReviewDocument, ValidationIssue, Workflow, WorkflowEdge, WorkflowGroup, WorkflowNode, WorkflowStatus } from "@/domain/types";
 import { createInsuranceClaimSeveritySample } from "@/domain/samples";
 import { createEmptyWorkflow, createNodeFromDefinitionId, duplicateWorkflow, getDefaultStageColor, newId, touchWorkflow } from "@/domain/workflow-factory";
 import { validateWorkflow } from "@/domain/validation";
@@ -18,6 +18,9 @@ type WorkflowMetaPatch = Partial<
 > & {
   approvalChainType?: ApprovalChainType;
 };
+type AddNodeOptions = Partial<Pick<WorkflowNode["data"], "label" | "description" | "owner" | "status" | "technology" | "tags" | "notes" | "documentationUrl">> & {
+  configuration?: Record<string, unknown>;
+};
 
 interface EditorState {
   workflow: Workflow;
@@ -26,6 +29,7 @@ interface EditorState {
   search: string;
   libraryCollapsed: boolean;
   inspectorCollapsed: boolean;
+  inspectorExpanded: boolean;
   validationOpen: boolean;
   theme: "light" | "dark";
   saveStatus: SaveStatus;
@@ -35,7 +39,10 @@ interface EditorState {
   clipboardNode: WorkflowNode | null;
   setWorkflow: (workflow: Workflow, resetHistory?: boolean) => void;
   updateWorkflowMeta: (patch: WorkflowMetaPatch) => void;
-  addNode: (definitionId: string, position?: { x: number; y: number }) => void;
+  addWorkflowDocument: (document: ReviewDocument) => void;
+  linkDocumentToNodes: (document: ReviewDocument, nodeIds: string[]) => void;
+  unlinkDocumentFromNode: (documentId: string, nodeId: string) => void;
+  addNode: (definitionId: string, position?: { x: number; y: number }, options?: AddNodeOptions) => void;
   updateNode: (id: string, patch: Partial<WorkflowNode["data"]>) => void;
   updateNodeConfiguration: (id: string, key: string, value: unknown) => void;
   addEdge: (source: string, target: string, type?: EdgeKind, handles?: { sourceHandle?: string | null; targetHandle?: string | null }) => void;
@@ -65,6 +72,7 @@ interface EditorState {
   toggleTheme: () => void;
   toggleLibrary: () => void;
   toggleInspector: () => void;
+  toggleInspectorExpanded: () => void;
   toggleValidation: () => void;
 }
 
@@ -79,6 +87,7 @@ export const useWorkflowStore = create<EditorState>((set, get) => {
     search: "",
     libraryCollapsed: false,
     inspectorCollapsed: false,
+    inspectorExpanded: false,
     validationOpen: true,
     theme: "light",
     saveStatus: "idle",
@@ -95,11 +104,69 @@ export const useWorkflowStore = create<EditorState>((set, get) => {
         future: resetHistory ? [] : get().future
       }),
     updateWorkflowMeta: (patch) => commit(set, get, (workflow) => applyWorkflowMetaPatch(workflow, patch)),
-    addNode: (definitionId, position = { x: 220, y: 220 }) =>
+    addWorkflowDocument: (document) =>
       commit(set, get, (workflow) => ({
         ...workflow,
-        nodes: [...workflow.nodes, createNodeFromDefinitionId(definitionId, position)]
+        reviewDocuments: dedupeDocuments([...(workflow.reviewDocuments ?? []), document])
       })),
+    linkDocumentToNodes: (document, nodeIds) =>
+      commit(set, get, (workflow) => {
+        const selectedIds = new Set(nodeIds);
+        return {
+          ...workflow,
+          reviewDocuments: dedupeDocuments([...(workflow.reviewDocuments ?? []), document]),
+          nodes: workflow.nodes.map((node) => {
+            if (!selectedIds.has(node.id)) return node;
+            const existing = Array.isArray(node.data.configuration.documents) ? node.data.configuration.documents.filter(isReviewDocument) : [];
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                configuration: {
+                  ...node.data.configuration,
+                  documents: dedupeDocuments([...existing, document])
+                }
+              }
+            };
+          })
+        };
+      }),
+    unlinkDocumentFromNode: (documentId, nodeId) =>
+      commit(set, get, (workflow) => ({
+        ...workflow,
+        nodes: workflow.nodes.map((node) => {
+          if (node.id !== nodeId) return node;
+          const existing = Array.isArray(node.data.configuration.documents) ? node.data.configuration.documents.filter(isReviewDocument) : [];
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              configuration: {
+                ...node.data.configuration,
+                documents: existing.filter((document) => document.id !== documentId)
+              }
+            }
+          };
+        })
+      })),
+    addNode: (definitionId, position = { x: 220, y: 220 }, options = {}) =>
+      commit(set, get, (workflow) => {
+        const node = createNodeFromDefinitionId(definitionId, position);
+        return {
+          ...workflow,
+          nodes: [
+            ...workflow.nodes,
+            {
+              ...node,
+              data: {
+                ...node.data,
+                ...options,
+                configuration: { ...node.data.configuration, ...(options.configuration ?? {}) }
+              }
+            }
+          ]
+        };
+      }),
     updateNode: (id, patch) =>
       commit(set, get, (workflow) => ({
         ...workflow,
@@ -332,6 +399,7 @@ export const useWorkflowStore = create<EditorState>((set, get) => {
     toggleTheme: () => set((state) => ({ theme: state.theme === "light" ? "dark" : "light" })),
     toggleLibrary: () => set((state) => ({ libraryCollapsed: !state.libraryCollapsed })),
     toggleInspector: () => set((state) => ({ inspectorCollapsed: !state.inspectorCollapsed })),
+    toggleInspectorExpanded: () => set((state) => ({ inspectorExpanded: !state.inspectorExpanded, inspectorCollapsed: false })),
     toggleValidation: () => set((state) => ({ validationOpen: !state.validationOpen }))
   };
 });
@@ -389,4 +457,19 @@ function cloneWorkflow(workflow: Workflow): Workflow {
 
 function cloneNode(node: WorkflowNode): WorkflowNode {
   return JSON.parse(JSON.stringify(node)) as WorkflowNode;
+}
+
+function isReviewDocument(value: unknown): value is ReviewDocument {
+  if (!value || typeof value !== "object") return false;
+  const document = value as Partial<ReviewDocument>;
+  return (
+    typeof document.id === "string" &&
+    typeof document.title === "string" &&
+    typeof document.url === "string" &&
+    (document.type === "pdf" || document.type === "doc" || document.type === "text")
+  );
+}
+
+function dedupeDocuments(documents: ReviewDocument[]) {
+  return [...new Map(documents.map((document) => [document.id, document])).values()];
 }

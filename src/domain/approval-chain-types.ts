@@ -30,52 +30,36 @@ export const APPROVAL_CHAIN_TYPE_OPTIONS: Array<{ id: ApprovalChainType; label: 
 
 export const DEFAULT_APPROVERS: Approver[] = [
   {
-    id: "approver-maya-chen",
-    name: "Maya Chen",
-    email: "maya.chen@example.com",
-    role: "Compliance Lead",
-    team: "Compliance",
-    approvalChainTypes: ["underwriting", "model_governance"]
+    id: "approver-qiao-jiang",
+    name: "Qiao Jiang",
+    email: "qiao.jiang@example.com",
+    role: "Approval Owner",
+    team: "AI Governance",
+    approvalChainTypes: ["underwriting", "data_engineering", "model_governance"]
   },
   {
-    id: "approver-jordan-patel",
-    name: "Jordan Patel",
-    email: "jordan.patel@example.com",
+    id: "approver-chad-gordon",
+    name: "Chad Gordon",
+    email: "chad.gordon@example.com",
     role: "Legal Counsel",
     team: "Legal",
     approvalChainTypes: ["underwriting", "procurement", "project_approval"]
   },
   {
-    id: "approver-nina-alvarez",
-    name: "Nina Alvarez",
-    email: "nina.alvarez@example.com",
+    id: "approver-johann-sun",
+    name: "Johann Sun",
+    email: "johann.sun@example.com",
     role: "Business Owner",
-    team: "Underwriting Operations",
-    approvalChainTypes: ["underwriting", "project_approval"]
+    team: "Product",
+    approvalChainTypes: ["underwriting", "project_approval", "procurement"]
   },
   {
-    id: "approver-sam-roberts",
-    name: "Sam Roberts",
-    email: "sam.roberts@example.com",
+    id: "approver-chae-won-lee",
+    name: "Chae Won Lee",
+    email: "chae.won.lee@example.com",
     role: "Data Platform Lead",
     team: "Data Engineering",
-    approvalChainTypes: ["data_engineering"]
-  },
-  {
-    id: "approver-avery-kim",
-    name: "Avery Kim",
-    email: "avery.kim@example.com",
-    role: "Security Reviewer",
-    team: "Security",
     approvalChainTypes: ["data_engineering", "procurement", "model_governance"]
-  },
-  {
-    id: "approver-priya-shah",
-    name: "Priya Shah",
-    email: "priya.shah@example.com",
-    role: "Finance Sponsor",
-    team: "Finance",
-    approvalChainTypes: ["project_approval", "procurement"]
   }
 ];
 

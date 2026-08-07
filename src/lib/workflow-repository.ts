@@ -1,4 +1,5 @@
 import { workflowSchema } from "@/domain/schema";
+import { syncDocumentsForWorkflow } from "@/lib/local-flow-tables";
 import type { Workflow, WorkflowRepository, WorkflowSummary } from "@/lib/workflow-repository-types";
 
 const INDEX_KEY = "workflow-canvas:index";
@@ -32,6 +33,7 @@ export class BrowserWorkflowRepository implements WorkflowRepository {
     const ids = new Set(readIndex());
     ids.add(workflow.id);
     localStorage.setItem(INDEX_KEY, JSON.stringify([...ids]));
+    syncDocumentsForWorkflow(workflow);
   }
 
   async delete(id: string): Promise<void> {

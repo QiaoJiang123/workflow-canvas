@@ -2,10 +2,11 @@
 
 import { CATEGORY_COLORS, CATEGORY_LABELS, getNodeDefinition } from "@/domain/node-definitions";
 import { PROVIDER_ICON_LIBRARY, getProviderOption, normalizeProviderIdForNode } from "@/domain/providers";
+import { downloadNodeLlmExport } from "@/lib/node-llm-export";
 import { useWorkflowStore } from "@/store/use-workflow-store";
 import { DynamicIcon } from "./icon";
 import { Handle, NodeProps, Position } from "@xyflow/react";
-import { Bolt, MoreVertical } from "lucide-react";
+import { Bolt, Download, MoreVertical } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
 
@@ -13,11 +14,15 @@ interface WorkflowNodeData {
   id: string;
   label: string;
   definitionId: string;
+  flowKind?: string;
   category: keyof typeof CATEGORY_LABELS;
   description?: string;
+  owner?: string;
+  workflowOwner?: string;
   technology?: string;
   providerId?: string;
   status?: string;
+  configuration?: Record<string, unknown>;
   invalid?: boolean;
   connectionTargetSide?: "left" | "right" | "top" | "bottom";
   isConnectionSource?: boolean;
@@ -28,6 +33,7 @@ export function WorkflowNodeComponent({ data, selected }: NodeProps) {
   const definition = getNodeDefinition(node.definitionId);
   const color = CATEGORY_COLORS[node.category];
   const select = useWorkflowStore((state) => state.select);
+  const workflow = useWorkflowStore((state) => state.workflow);
   const isTrigger = !definition?.inputs.length;
   const provider = getProviderOption(normalizeProviderIdForNode(node.definitionId, node.providerId));
   const [isHovered, setIsHovered] = useState(false);
@@ -35,10 +41,12 @@ export function WorkflowNodeComponent({ data, selected }: NodeProps) {
   const [iconsOpen, setIconsOpen] = useState(false);
   const inputs = definition?.inputs ?? [];
   const outputs = definition?.outputs ?? [];
+  const isApprovalChainNode = node.flowKind === "approval_chain";
+  const approvalStatus = isApprovalChainNode ? normalizeApprovalNodeStatus(node.configuration, node.status) : "";
 
   return (
     <article
-      className={`workflow-node ${selected ? "is-selected" : ""} ${isHovered ? "is-hovered" : ""} ${node.invalid ? "is-invalid" : ""} ${node.isConnectionSource ? "is-connection-source" : ""} ${node.connectionTargetSide ? `is-connection-target target-${node.connectionTargetSide}` : ""}`}
+      className={`workflow-node ${isApprovalChainNode ? "approval-chain-node" : ""} ${approvalStatus ? `approval-status-${approvalStatus}` : ""} ${selected ? "is-selected" : ""} ${isHovered ? "is-hovered" : ""} ${node.invalid ? "is-invalid" : ""} ${node.isConnectionSource ? "is-connection-source" : ""} ${node.connectionTargetSide ? `is-connection-target target-${node.connectionTargetSide}` : ""}`}
       style={{ "--node-accent": color } as React.CSSProperties}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => {
@@ -66,9 +74,19 @@ export function WorkflowNodeComponent({ data, selected }: NodeProps) {
         </span>
       )}
       <div className="node-tile">
-        <span className="node-operation" title={node.technology || CATEGORY_LABELS[node.category]}>
-          {formatOperation(node.technology || CATEGORY_LABELS[node.category])}
-        </span>
+        {isApprovalChainNode ? (
+          <strong className="approval-node-name" title={node.label}>{node.label}</strong>
+        ) : (
+          <>
+            <span className="node-operation" title={node.technology || CATEGORY_LABELS[node.category]}>
+              {formatOperation(node.technology || CATEGORY_LABELS[node.category])}
+            </span>
+            <span className="node-icon" aria-hidden="true">
+              {provider ? <Image src={provider.icon} alt="" width={28} height={28} /> : <DynamicIcon name={definition?.icon ?? "Circle"} />}
+            </span>
+            {provider && <span className="node-provider-badge">{provider.name}</span>}
+          </>
+        )}
         <div className="node-menu-shell">
           <button
             className="node-menu"
@@ -91,14 +109,29 @@ export function WorkflowNodeComponent({ data, selected }: NodeProps) {
                 role="menuitem"
                 onClick={(event) => {
                   event.stopPropagation();
-                  setIconsOpen((current) => !current);
+                  downloadNodeLlmExport(workflow, node.id);
+                  setMenuOpen(false);
+                  setIconsOpen(false);
                 }}
               >
-                Icon
+                <Download size={13} />
+                Download
               </button>
+              {!isApprovalChainNode ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setIconsOpen((current) => !current);
+                  }}
+                >
+                  Icon
+                </button>
+              ) : null}
             </div>
           )}
-          {iconsOpen && (
+          {iconsOpen && !isApprovalChainNode && (
             <div className="node-icon-library" aria-label="Provider icon library">
               {PROVIDER_ICON_LIBRARY.map((providerOption) => (
                 <span key={providerOption.id} className="provider-icon-swatch" title={providerOption.name}>
@@ -109,15 +142,13 @@ export function WorkflowNodeComponent({ data, selected }: NodeProps) {
             </div>
           )}
         </div>
-        <span className="node-icon" aria-hidden="true">
-          {provider ? <Image src={provider.icon} alt="" width={28} height={28} /> : <DynamicIcon name={definition?.icon ?? "Circle"} />}
-        </span>
-        {provider && <span className="node-provider-badge">{provider.name}</span>}
       </div>
-      <div className="node-caption">
-        <strong title={node.label}>{node.label}</strong>
-        <span className={`node-status ${node.status ?? "not_started"}`} title={`Status: ${formatStatus(node.status)}`} />
-      </div>
+      {!isApprovalChainNode ? (
+        <div className="node-caption">
+          <strong title={node.label}>{node.label}</strong>
+          <span className={`node-status ${node.status ?? "not_started"}`} title={`Status: ${formatStatus(node.status)}`} />
+        </div>
+      ) : null}
       {outputs.map((output) => (
         <Handle key={`${output.id}-left`} id={`${output.id}-left`} type="source" position={Position.Left} className="node-handle node-handle-left" />
       ))}
@@ -146,4 +177,12 @@ function formatOperation(value: string) {
 
 function formatStatus(status?: string) {
   return (status || "not_started").replaceAll("_", " ");
+}
+
+function normalizeApprovalNodeStatus(configuration: Record<string, unknown> | undefined, status?: string) {
+  const rawStatus = String(configuration?.status ?? configuration?.approvalStatus ?? status ?? "").trim();
+  if (rawStatus === "approved" || rawStatus === "ready") return "approved";
+  if (rawStatus === "rejected" || rawStatus === "blocked") return "rejected";
+  if (rawStatus === "in_review" || rawStatus === "in_progress" || rawStatus === "needs_review") return "in-review";
+  return "";
 }

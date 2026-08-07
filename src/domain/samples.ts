@@ -35,19 +35,19 @@ const approvalProfiles: Record<
   }
 > = {
   underwriting: {
-    owner: "Underwriting Operations",
+    owner: "Qiao Jiang",
     team: "AI Governance",
     tags: ["approval-chain", "underwriting", "governance", "review"],
     requestTitle: "Underwriting Change Request",
     requestSummary: "Business request, proposed routing change, expected benefits, and rollout plan.",
     validationRules: "Confirm owner, risk tier, affected policies, rollout date, evidence packet, and rollback plan are present.",
-    firstAssignee: "Maya Chen",
+    firstAssignee: "Qiao Jiang",
     firstRole: "Compliance Lead",
     firstInstructions: "Review fairness impact, audit evidence, consent wording, and retention controls.",
-    secondAssignee: "Jordan Patel",
+    secondAssignee: "Chad Gordon",
     secondRole: "Legal Counsel",
     secondInstructions: "Review customer-facing wording, vendor obligations, retention, and approval conditions.",
-    finalApprover: "Nina Alvarez",
+    finalApprover: "Johann Sun",
     finalCriteria: "Compliance and Legal approvals are complete; rollout owner accepts the change window."
   },
   data_engineering: {
@@ -57,13 +57,13 @@ const approvalProfiles: Record<
     requestTitle: "Data Pipeline Change Request",
     requestSummary: "Schema, pipeline, lineage, access, and downstream dependency review for a data engineering change.",
     validationRules: "Confirm data owner, lineage impact, breaking-schema risk, access class, SLA impact, and rollback plan.",
-    firstAssignee: "Sam Roberts",
+    firstAssignee: "Chae Won Lee",
     firstRole: "Data Platform Lead",
     firstInstructions: "Review schema compatibility, orchestration impact, lineage, monitoring, and backfill plan.",
-    secondAssignee: "Avery Kim",
+    secondAssignee: "Qiao Jiang",
     secondRole: "Security Reviewer",
     secondInstructions: "Review data classification, access controls, secrets handling, and retention requirements.",
-    finalApprover: "Maya Chen",
+    finalApprover: "Qiao Jiang",
     finalCriteria: "Data owner and security approval are complete; pipeline release window is accepted."
   },
   project_approval: {
@@ -73,13 +73,13 @@ const approvalProfiles: Record<
     requestTitle: "Project Approval Request",
     requestSummary: "Project scope, sponsor, timeline, budget, dependency, and risk review before launch.",
     validationRules: "Confirm sponsor, budget, scope, success metric, timeline, dependency owners, and decision record.",
-    firstAssignee: "Priya Shah",
+    firstAssignee: "Johann Sun",
     firstRole: "Finance Sponsor",
     firstInstructions: "Review budget, business case, expected value, and funding source.",
-    secondAssignee: "Jordan Patel",
+    secondAssignee: "Chad Gordon",
     secondRole: "Legal Counsel",
     secondInstructions: "Review contract, vendor, data sharing, and delivery obligation risks.",
-    finalApprover: "Nina Alvarez",
+    finalApprover: "Johann Sun",
     finalCriteria: "Finance and Legal approvals are complete; delivery owner accepts scope and timeline."
   },
   procurement: {
@@ -89,13 +89,13 @@ const approvalProfiles: Record<
     requestTitle: "Procurement Approval Request",
     requestSummary: "Vendor purchase request with budget, security, legal, and business-owner approvals.",
     validationRules: "Confirm requester, vendor, budget owner, data access, contract path, security review, and renewal terms.",
-    firstAssignee: "Priya Shah",
+    firstAssignee: "Johann Sun",
     firstRole: "Budget Owner",
     firstInstructions: "Review purchase amount, business value, cost center, and renewal commitment.",
-    secondAssignee: "Avery Kim",
+    secondAssignee: "Qiao Jiang",
     secondRole: "Security Reviewer",
     secondInstructions: "Review vendor access, data handling, security questionnaire, and residual risk.",
-    finalApprover: "Jordan Patel",
+    finalApprover: "Chad Gordon",
     finalCriteria: "Budget, Security, and Legal reviews are complete; vendor terms are approved."
   },
   model_governance: {
@@ -105,13 +105,13 @@ const approvalProfiles: Record<
     requestTitle: "Model Governance Approval Request",
     requestSummary: "Model release review with evaluation evidence, risk acceptance, monitoring, and production controls.",
     validationRules: "Confirm model owner, training data, evaluation evidence, bias review, monitoring, approval gates, and rollback plan.",
-    firstAssignee: "Maya Chen",
+    firstAssignee: "Qiao Jiang",
     firstRole: "Compliance Lead",
     firstInstructions: "Review policy evidence, fairness notes, audit trail, and monitoring obligations.",
-    secondAssignee: "Avery Kim",
+    secondAssignee: "Qiao Jiang",
     secondRole: "Security Reviewer",
     secondInstructions: "Review production access, model endpoint controls, logging, and incident response plan.",
-    finalApprover: "Nina Alvarez",
+    finalApprover: "Johann Sun",
     finalCriteria: "Compliance and Security approvals are complete; model owner accepts production controls."
   }
 };
@@ -212,32 +212,7 @@ export function createApprovalChainSample(approvalChainType: ApprovalChainType =
   workflow.tags = profile.tags;
   workflow.createdAt = sampleTimestamp;
   workflow.updatedAt = sampleTimestamp;
-  workflow.reviewDocuments = [
-    {
-      id: "doc-underwriting-change-request",
-      title: profile.requestTitle,
-      type: "pdf",
-      url: "/review-documents/underwriting-change-request.pdf",
-      owner: profile.owner,
-      summary: profile.requestSummary
-    },
-    {
-      id: "doc-compliance-checklist",
-      title: "Compliance Checklist",
-      type: "pdf",
-      url: "/review-documents/compliance-checklist.pdf",
-      owner: "Maya Chen",
-      summary: "Reviewer checklist covering fairness, auditability, disclosures, and evidence requirements."
-    },
-    {
-      id: "doc-legal-terms-review",
-      title: "Legal Terms Review",
-      type: "pdf",
-      url: "/review-documents/legal-terms-review.pdf",
-      owner: "Jordan Patel",
-      summary: "Legal notes for policy language, third-party obligations, retention, and approval conditions."
-    }
-  ];
+  workflow.reviewDocuments = [];
   workflow.groups = [
     ["Request", 80, "#dbeafe"],
     ["Triage", 340, "#cffafe"],
@@ -398,7 +373,7 @@ export function createApprovalChainSample(approvalChainType: ApprovalChainType =
     const node = createNodeFromDefinitionId(definitionId, { x, y });
     node.id = `node-approval-${slugify(label)}`;
     node.data.label = label;
-    node.data.configuration = { ...node.data.configuration, ...configuration, documents: createApprovalNodeDocuments(label) };
+    node.data.configuration = { ...node.data.configuration, ...configuration, creator: "Qiao Jiang", documents: createApprovalNodeDocuments(label) };
     node.data.status = "ready";
     return node;
   });

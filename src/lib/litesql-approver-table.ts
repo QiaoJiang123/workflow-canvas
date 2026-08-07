@@ -2,6 +2,7 @@ import { DEFAULT_APPROVERS } from "@/domain/approval-chain-types";
 import type { ApprovalChainType, Approver } from "@/domain/types";
 
 const STORAGE_KEY = "workflow-canvas:litesql:approvers";
+const DELETED_KEY = "workflow-canvas:litesql:approvers:deleted";
 
 export const APPROVER_TABLE_NAME = "approvers";
 
@@ -19,8 +20,9 @@ export function listApprovers() {
   try {
     const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "[]");
     const stored = Array.isArray(parsed) ? parsed.filter(isApprover) : [];
+    const deletedIds = readDeletedApproverIds();
     const byId = new Map([...DEFAULT_APPROVERS, ...stored].map((approver) => [approver.id, approver]));
-    const approvers = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+    const approvers = [...byId.values()].filter((approver) => !deletedIds.has(approver.id)).sort((a, b) => a.name.localeCompare(b.name));
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(approvers));
     return approvers;
   } catch {
@@ -33,9 +35,22 @@ export function insertApprover(input: Omit<Approver, "id">) {
     ...input,
     id: newApproverId(input.name)
   };
-  const next = [...listApprovers().filter((item) => item.email.toLowerCase() !== approver.email.toLowerCase()), approver].sort((a, b) => a.name.localeCompare(b.name));
+  const next = [
+    ...listApprovers().filter(
+      (item) => item.email.toLowerCase() !== approver.email.toLowerCase() && item.name.toLowerCase() !== approver.name.toLowerCase()
+    ),
+    approver
+  ].sort((a, b) => a.name.localeCompare(b.name));
   if (typeof window !== "undefined") window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   return approver;
+}
+
+export function deleteApprover(id: string) {
+  if (typeof window === "undefined") return;
+  const deletedIds = readDeletedApproverIds();
+  deletedIds.add(id);
+  window.localStorage.setItem(DELETED_KEY, JSON.stringify([...deletedIds]));
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(listApprovers().filter((approver) => approver.id !== id)));
 }
 
 function isApprover(value: unknown): value is Approver {
@@ -54,6 +69,15 @@ function isApprover(value: unknown): value is Approver {
 
 function isApprovalChainType(value: unknown): value is ApprovalChainType {
   return typeof value === "string" && ["underwriting", "data_engineering", "project_approval", "procurement", "model_governance"].includes(value);
+}
+
+function readDeletedApproverIds() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(DELETED_KEY) ?? "[]");
+    return new Set(Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : []);
+  } catch {
+    return new Set<string>();
+  }
 }
 
 function newApproverId(name: string) {

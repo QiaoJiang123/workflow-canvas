@@ -1,5 +1,10 @@
+import { AuthGuard } from "@/components/auth-guard";
 import { WorkflowManager } from "@/components/workflow-manager";
 
 export default function WorkflowsPage() {
-  return <WorkflowManager />;
+  return (
+    <AuthGuard>
+      <WorkflowManager />
+    </AuthGuard>
+  );
 }

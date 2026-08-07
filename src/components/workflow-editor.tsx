@@ -8,18 +8,25 @@ import type { Workflow } from "@/domain/types";
 import { duplicateWorkflow } from "@/domain/workflow-factory";
 import { EditorHeader } from "./editor-header";
 import { Inspector } from "./inspector";
+import { LoadingFlow } from "./loading-flow";
 import { NodeLibrary } from "./node-library";
 import { ValidationDrawer } from "./validation-drawer";
 import { WorkflowCanvas } from "./workflow-canvas";
+import { getAuthSession } from "@/lib/local-auth";
+import { canUserAccessWorkflow } from "@/lib/workflow-access";
+import { ChevronsLeft, ChevronsRight } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const repository = new BrowserWorkflowRepository();
 
 export function WorkflowEditor({ workflowId }: { workflowId?: string }) {
+  const router = useRouter();
   const workflow = useWorkflowStore((state) => state.workflow);
   const theme = useWorkflowStore((state) => state.theme);
   const libraryCollapsed = useWorkflowStore((state) => state.libraryCollapsed);
   const inspectorCollapsed = useWorkflowStore((state) => state.inspectorCollapsed);
+  const inspectorExpanded = useWorkflowStore((state) => state.inspectorExpanded);
   const validationOpen = useWorkflowStore((state) => state.validationOpen);
   const setWorkflow = useWorkflowStore((state) => state.setWorkflow);
   const setSaveStatus = useWorkflowStore((state) => state.setSaveStatus);
@@ -30,6 +37,7 @@ export function WorkflowEditor({ workflowId }: { workflowId?: string }) {
   const clearSelection = useWorkflowStore((state) => state.clearSelection);
   const undo = useWorkflowStore((state) => state.undo);
   const redo = useWorkflowStore((state) => state.redo);
+  const toggleInspectorExpanded = useWorkflowStore((state) => state.toggleInspectorExpanded);
   const loadedWorkflowRef = useRef("");
   const [repositoryReady, setRepositoryReady] = useState(false);
 
@@ -51,6 +59,13 @@ export function WorkflowEditor({ workflowId }: { workflowId?: string }) {
         setRepositoryReady(true);
         return;
       }
+      const session = getAuthSession();
+      if (session && !canUserAccessWorkflow(stored, session.user)) {
+        setSaveStatus("error");
+        setRepositoryReady(true);
+        router.replace("/workflows");
+        return;
+      }
       const refreshedSample = shouldRefreshApprovalSample(stored) ? createApprovalChainSample() : shouldRefreshStoredSample(stored) ? createInsuranceClaimSeveritySample() : stored;
       setWorkflow(refreshedSample, true);
       if (refreshedSample !== stored) await repository.save(refreshedSample);
@@ -58,18 +73,23 @@ export function WorkflowEditor({ workflowId }: { workflowId?: string }) {
       setRepositoryReady(true);
     };
     void loadWorkflow();
-  }, [setSaveStatus, setWorkflow, workflowId]);
+  }, [router, setSaveStatus, setWorkflow, workflowId]);
 
   useEffect(() => {
     if (!repositoryReady) return;
-    setSaveStatus("saving");
-    const timeout = window.setTimeout(() => {
-      repository
-        .save(workflow)
-        .then(() => setSaveStatus("saved"))
-        .catch(() => setSaveStatus("error"));
+    let cancelled = false;
+    const timeout = window.setTimeout(async () => {
+      try {
+        await repository.save(useWorkflowStore.getState().workflow);
+        if (!cancelled) setSaveStatus("saved");
+      } catch {
+        if (!cancelled) setSaveStatus("error");
+      }
     }, 450);
-    return () => window.clearTimeout(timeout);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
   }, [repositoryReady, setSaveStatus, workflow]);
 
   useEffect(() => {
@@ -112,6 +132,8 @@ export function WorkflowEditor({ workflowId }: { workflowId?: string }) {
       }
       if (event.key === "Backspace" || event.key === "Delete") {
         event.preventDefault();
+        const state = useWorkflowStore.getState();
+        if (!canDeleteSelectedItem(state.workflow, state.selectedItem)) return;
         deleteSelected();
       }
       if (event.key === "Escape") {
@@ -129,10 +151,15 @@ export function WorkflowEditor({ workflowId }: { workflowId?: string }) {
         "editor-shell",
         libraryCollapsed ? "library-collapsed" : "",
         inspectorCollapsed ? "inspector-collapsed" : "",
+        inspectorExpanded ? "inspector-expanded" : "",
         validationOpen ? "validation-open" : ""
       ].join(" "),
-    [inspectorCollapsed, libraryCollapsed, validationOpen]
+    [inspectorCollapsed, inspectorExpanded, libraryCollapsed, validationOpen]
   );
+
+  if (!repositoryReady) {
+    return <LoadingFlow title="Loading Flow..." detail="Loading the workflow graph, nodes, edges, stages, and review documents." />;
+  }
 
   return (
     <main className={gridClass}>
@@ -144,6 +171,17 @@ export function WorkflowEditor({ workflowId }: { workflowId?: string }) {
       />
       <NodeLibrary />
       <WorkflowCanvas />
+      {!inspectorCollapsed ? (
+        <button
+          type="button"
+          className="inspector-edge-toggle"
+          aria-label={inspectorExpanded ? "Shrink right panel" : "Expand right panel"}
+          title={inspectorExpanded ? "Shrink right panel" : "Expand right panel"}
+          onClick={toggleInspectorExpanded}
+        >
+          <span aria-hidden="true">{inspectorExpanded ? <ChevronsRight /> : <ChevronsLeft />}</span>
+        </button>
+      ) : null}
       <Inspector />
       <ValidationDrawer />
     </main>
@@ -156,6 +194,17 @@ function parseWorkflowImport(json: string): Workflow {
   return workflow as Workflow;
 }
 
+function canDeleteSelectedItem(workflow: Workflow, selectedItem: { type: string; id: string }) {
+  if (workflow.flowKind !== "approval_chain" || selectedItem.type !== "node") return true;
+  const node = workflow.nodes.find((item) => item.id === selectedItem.id);
+  if (!node) return true;
+  const creator = String(node.data.configuration.creator ?? node.data.owner ?? workflow.owner ?? "").trim().toLowerCase();
+  if (!creator) return true;
+  const user = getAuthSession()?.user;
+  const userValues = [user?.name, user?.email].filter(Boolean).map((value) => String(value).trim().toLowerCase());
+  return userValues.includes(creator);
+}
+
 function shouldRefreshStoredSample(workflow: { id?: string; name: string; flowKind?: string; nodes: Array<{ position: { x: number } }> }) {
   if (workflow.id !== "workflow-claim-severity-sample" && workflow.name !== "Insurance claim severity workflow") return false;
   if (workflow.flowKind !== "ai_workflow") return true;
@@ -164,11 +213,19 @@ function shouldRefreshStoredSample(workflow: { id?: string; name: string; flowKi
   return maxX > 1900 || workflow.nodes.length < 15;
 }
 
-function shouldRefreshApprovalSample(workflow: { id?: string; name: string; flowKind?: string; approvalChainType?: string; nodes?: Array<{ data?: { configuration?: Record<string, unknown> } }> }) {
+function shouldRefreshApprovalSample(workflow: { id?: string; name: string; flowKind?: string; approvalChainType?: string; owner?: string; reviewDocuments?: unknown[]; nodes?: Array<{ data?: { configuration?: Record<string, unknown> } }> }) {
   if (workflow.id !== "flow-underwriting-approval-chain-sample" && workflow.name !== "Underwriting approval chain") return false;
   return (
     workflow.flowKind !== "approval_chain" ||
     workflow.approvalChainType !== "underwriting" ||
-    !workflow.nodes?.every((node) => Array.isArray(node.data?.configuration?.documents) && node.data.configuration.documents.length > 0)
+    workflow.owner !== "Qiao Jiang" ||
+    Boolean(workflow.reviewDocuments?.length) ||
+    !workflow.nodes?.every((node) => String(node.data?.configuration?.creator ?? "") === "Qiao Jiang") ||
+    !workflow.nodes?.every((node) => Array.isArray(node.data?.configuration?.documents) && node.data.configuration.documents.length > 0) ||
+    !workflow.nodes?.some((node) =>
+      ["Qiao Jiang", "Chad Gordon", "Johann Sun", "Chae Won Lee"].includes(
+        String(node.data?.configuration?.approver ?? node.data?.configuration?.assignee ?? node.data?.configuration?.reviewer ?? "")
+      )
+    )
   );
 }

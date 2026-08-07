@@ -1,5 +1,5 @@
 import type { Workflow } from "@/domain/types";
-import { planWorkflowActions } from "@/domain/workflow-agent";
+import { planAgentRun } from "@/agents/orchestrator";
 import { NextResponse } from "next/server";
 
 type ChatRole = "user" | "assistant";
@@ -26,16 +26,25 @@ export async function POST(request: Request) {
   }
 
   const workflowContext = body.context?.slice(0, 4000) || summarizeWorkflow(body.workflow, body.selected);
-  const agentPlan = planWorkflowActions(latest.content, body.workflow, body.selected);
-  const fallback = agentPlan.actions.length ? agentPlan.message : buildLocalFallback(latest.content, workflowContext);
+  const agentPlan = body.workflow
+    ? planAgentRun({
+        workflow: body.workflow,
+        prompt: latest.content,
+        messages,
+        selected: body.selected,
+        executionMode: "plan_only",
+        userRole: "none"
+      })
+    : null;
+  const fallback = agentPlan?.actions.length ? agentPlan.message : buildLocalFallback(latest.content, workflowContext);
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
     return NextResponse.json({
-      mode: "local",
+      mode: "agents-local",
       message: `${fallback}\n\nSet OPENAI_API_KEY on the server to enable GPT-powered responses.`,
-      actions: agentPlan.actions,
-      workflow: agentPlan.workflow
+      actions: agentPlan?.actions ?? [],
+      plan: agentPlan
     });
   }
 
@@ -57,22 +66,22 @@ export async function POST(request: Request) {
 
     if (!response.ok) {
       const detail = await response.text();
-      return NextResponse.json({ mode: "local", message: fallback, actions: agentPlan.actions, workflow: agentPlan.workflow, error: detail.slice(0, 500) }, { status: 200 });
+      return NextResponse.json({ mode: "agents-local", message: fallback, actions: agentPlan?.actions ?? [], plan: agentPlan, error: detail.slice(0, 500) }, { status: 200 });
     }
 
     const data = (await response.json()) as { output_text?: string };
     return NextResponse.json({
       mode: "gpt",
-      message: agentPlan.actions.length ? `${agentPlan.message}\n\n${data.output_text?.trim() || ""}`.trim() : data.output_text?.trim() || fallback,
-      actions: agentPlan.actions,
-      workflow: agentPlan.workflow
+      message: agentPlan?.actions.length ? `${agentPlan.message}\n\n${data.output_text?.trim() || ""}`.trim() : data.output_text?.trim() || fallback,
+      actions: agentPlan?.actions ?? [],
+      plan: agentPlan
     });
   } catch (error) {
     return NextResponse.json({
-      mode: "local",
+      mode: "agents-local",
       message: fallback,
-      actions: agentPlan.actions,
-      workflow: agentPlan.workflow,
+      actions: agentPlan?.actions ?? [],
+      plan: agentPlan,
       error: error instanceof Error ? error.message : "Chat request failed"
     });
   }

@@ -1,6 +1,6 @@
 {
   "name": "workflow-canvas",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "private": true,
   "scripts": {
     "dev": "PATH=/Users/qiaojiang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH next dev",

@@ -2,7 +2,11 @@
 
 import { useWorkflowStore } from "@/store/use-workflow-store";
 import type { Workflow } from "@/domain/types";
-import { Bot, Loader2, Send, Sparkles, UserRound } from "lucide-react";
+import { getAuthSession } from "@/lib/local-auth";
+import { getWorkflowAccessRole } from "@/lib/workflow-access";
+import { recordAgentExecution, recordAgentPlan } from "@/lib/local-flow-tables";
+import type { AgentExecutionMode, AgentExecutionResult, AgentPlan } from "@/agents/types";
+import { Bot, Check, ClipboardList, Loader2, Play, Send, Sparkles, UserRound, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type ChatRole = "user" | "assistant";
@@ -14,9 +18,9 @@ interface ChatMessage {
 }
 
 const starterPrompts = [
-  "Add approval and monitoring nodes with edges",
-  "Connect Human Review to Model Registry",
-  "Change selected node content"
+  "Add a review square after the selected square",
+  "Set selected provider to Azure",
+  "Validate gaps and recommend fixes"
 ];
 
 export function WorkflowChat() {
@@ -33,7 +37,12 @@ export function WorkflowChat() {
   ]);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [executionMode, setExecutionMode] = useState<AgentExecutionMode>("confirm_each_step");
+  const [pendingPlan, setPendingPlan] = useState<AgentPlan | null>(null);
+  const [selectedActionIds, setSelectedActionIds] = useState<string[]>([]);
+  const [session, setSession] = useState<ReturnType<typeof getAuthSession>>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const userRole = useMemo(() => getWorkflowAccessRole(workflow, session?.user), [session?.user, workflow]);
 
   const contextLabel = useMemo(() => {
     if (selectedItem.type === "node") {
@@ -70,7 +79,7 @@ export function WorkflowChat() {
     }
   }, [selectedItem, workflow]);
 
-  async function sendMessage(content: string) {
+  async function sendAgentPlan(content: string) {
     const trimmed = content.trim();
     if (!trimmed || isSending) return;
 
@@ -79,25 +88,86 @@ export function WorkflowChat() {
     setMessages(nextMessages);
     setInput("");
     setIsSending(true);
+    setPendingPlan(null);
 
     try {
-      const response = await fetch("/api/chat", {
+      const response = await fetch("/api/agents/plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: nextMessages.map(({ role, content }) => ({ role, content })),
+          prompt: trimmed,
           workflow,
-          selected: selectedItem
+          selected: selectedItem,
+          executionMode,
+          userRole,
+          userName: session?.user.name
         })
       });
-      const data = (await response.json()) as { message?: string; error?: string; workflow?: Workflow };
-      if (data.workflow) setWorkflow(data.workflow, false);
+      const data = (await response.json()) as { message?: string; error?: string; plan?: AgentPlan };
+      if (!response.ok || !data.plan) throw new Error(data.error ?? "The agent planner could not create a plan.");
+      const plan = data.plan;
+
       setMessages((current) => [
         ...current,
         {
           id: crypto.randomUUID(),
           role: "assistant",
-          content: data.message ?? data.error ?? "I could not generate a response."
+          content: data.message ?? plan.message
+        }
+      ]);
+      setPendingPlan(plan);
+      recordAgentPlan(plan, session?.user.name);
+      const defaultActionIds = plan.actions.map((action) => action.id);
+      setSelectedActionIds(defaultActionIds);
+      if (executionMode === "auto_apply" && defaultActionIds.length) {
+        await executePlan(plan, defaultActionIds, true);
+      }
+    } catch (error) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: error instanceof Error ? error.message : "The agent request failed."
+        }
+      ]);
+    } finally {
+      setIsSending(false);
+      inputRef.current?.focus();
+    }
+  }
+
+  async function executePlan(plan: AgentPlan, approvedActionIds: string[], fromAutoApply = false) {
+    if (!approvedActionIds.length || isSending) return;
+    setIsSending(true);
+    try {
+      const response = await fetch("/api/agents/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workflow,
+          actions: plan.actions,
+          approvedActionIds,
+          selected: selectedItem,
+          userRole,
+          userName: session?.user.name,
+          prompt: plan.prompt
+        })
+      });
+      const data = (await response.json()) as Partial<AgentExecutionResult> & { error?: string };
+      if (!response.ok || !data.workflow) throw new Error(data.error ?? "The agent executor could not apply this plan.");
+      setWorkflow(data.workflow, false);
+      if (data.actions && data.auditLog && data.warnings) {
+        recordAgentExecution(plan.id, data as AgentExecutionResult);
+      }
+      setPendingPlan(null);
+      setMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: `${fromAutoApply ? "Auto-applied" : "Applied"} ${data.actions?.filter((action) => action.status === "applied").length ?? approvedActionIds.length} action(s).${data.warnings?.length ? ` ${data.warnings.join(" ")}` : ""}`
         }
       ]);
     } catch (error) {
@@ -106,7 +176,7 @@ export function WorkflowChat() {
         {
           id: crypto.randomUUID(),
           role: "assistant",
-          content: error instanceof Error ? error.message : "The chat request failed."
+          content: error instanceof Error ? error.message : "The agent execution failed."
         }
       ]);
     } finally {
@@ -117,7 +187,11 @@ export function WorkflowChat() {
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void sendMessage(input);
+    void sendAgentPlan(input);
+  }
+
+  function toggleAction(actionId: string) {
+    setSelectedActionIds((current) => (current.includes(actionId) ? current.filter((id) => id !== actionId) : [...current, actionId]));
   }
 
   useEffect(() => {
@@ -131,12 +205,16 @@ export function WorkflowChat() {
       if (!button || !chatRoot.contains(button)) return;
       event.preventDefault();
       event.stopPropagation();
-      void sendMessage(button.dataset.agentPrompt ?? button.textContent ?? "");
+      void sendAgentPlan(button.dataset.agentPrompt ?? button.textContent ?? "");
     }
 
     chatRoot.addEventListener("click", onSuggestionClick, true);
     return () => chatRoot.removeEventListener("click", onSuggestionClick, true);
   });
+
+  useEffect(() => {
+    setSession(getAuthSession());
+  }, []);
 
   return (
     <section
@@ -153,14 +231,23 @@ export function WorkflowChat() {
         </span>
         <div>
           <strong>Workflow Copilot</strong>
-          <small title={contextLabel}>{contextLabel}</small>
+          <small title={contextLabel}>{contextLabel} · {userRole}</small>
         </div>
       </header>
 
+      <div className="agent-mode-control" aria-label="Agent execution mode">
+        <ClipboardList size={13} />
+        <select value={executionMode} onChange={(event) => setExecutionMode(event.target.value as AgentExecutionMode)} disabled={isSending}>
+          <option value="confirm_each_step">Confirm actions</option>
+          <option value="plan_only">Plan only</option>
+          <option value="auto_apply">Auto apply</option>
+        </select>
+      </div>
+
       <div className="chat-suggestions" aria-label="Suggested prompts">
         {starterPrompts.map((prompt) => (
-          <button key={prompt} type="button" data-agent-prompt={prompt} onClick={() => void sendMessage(prompt)} disabled={isSending}>
-            {prompt}
+          <button key={prompt} type="button" data-agent-prompt={prompt} onClick={() => void sendAgentPlan(prompt)} disabled={isSending}>
+            <span>{prompt}</span>
           </button>
         ))}
       </div>
@@ -184,6 +271,46 @@ export function WorkflowChat() {
         )}
       </div>
 
+      {pendingPlan && (
+        <section className="agent-plan-card" aria-label="Pending agent plan">
+          <header>
+            <div>
+              <strong>{pendingPlan.selectedAgent.replaceAll("_", " ")}</strong>
+              <small>{pendingPlan.actions.length} proposed action(s)</small>
+            </div>
+            <button type="button" aria-label="Reject plan" title="Reject plan" onClick={() => setPendingPlan(null)} disabled={isSending}>
+              <X size={14} />
+            </button>
+          </header>
+          <div className="agent-step-list">
+            {pendingPlan.steps.map((step) => (
+              <span key={step.id}>{step.title}</span>
+            ))}
+          </div>
+          <div className="agent-action-list">
+            {pendingPlan.actions.map((actionItem) => (
+              <label key={actionItem.id} className="agent-action-row">
+                <input type="checkbox" checked={selectedActionIds.includes(actionItem.id)} onChange={() => toggleAction(actionItem.id)} disabled={isSending || executionMode === "plan_only"} />
+                <span>
+                  <strong>{actionItem.title}</strong>
+                  <small>{actionItem.kind} · {actionItem.requiresRole ?? "read-only"}</small>
+                </span>
+              </label>
+            ))}
+          </div>
+          <footer className="agent-plan-actions">
+            <button type="button" onClick={() => void executePlan(pendingPlan, selectedActionIds)} disabled={isSending || executionMode === "plan_only" || !selectedActionIds.length}>
+              <Check size={13} />
+              <span>Apply selected</span>
+            </button>
+            <button type="button" onClick={() => void executePlan(pendingPlan, pendingPlan.actions.map((actionItem) => actionItem.id))} disabled={isSending || executionMode === "plan_only"}>
+              <Play size={13} />
+              <span>Apply all</span>
+            </button>
+          </footer>
+        </section>
+      )}
+
       <form className="chat-composer" onSubmit={onSubmit}>
         <textarea
           ref={inputRef}
@@ -192,7 +319,7 @@ export function WorkflowChat() {
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
-              void sendMessage(input);
+              void sendAgentPlan(input);
             }
           }}
           placeholder="Ask an agent to add nodes, connect edges, or edit content"
