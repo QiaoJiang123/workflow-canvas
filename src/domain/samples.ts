@@ -389,7 +389,7 @@ export function createApprovalChainSample(approvalChainType: ApprovalChainType =
     ["node-approval-legal-approval", "node-approval-business-owner-approval", "Legal approved", "approval", "out", "in"],
     ["node-approval-business-owner-approval", "node-approval-notify-request-owner", "Approved", "approval", "out", "in"],
     ["node-approval-notify-request-owner", "node-approval-approval-audit-record", "Evidence", "data", "out", "in"],
-    ["node-approval-compliance-approval", "node-approval-escalate-exception", "Rejected", "feedback", "out-right", "in-left"],
+    ["node-approval-compliance-approval", "node-approval-escalate-exception", "Rejected", "feedback", "out", "in"],
     ["node-approval-legal-approval", "node-approval-escalate-exception", "Rejected", "feedback", "out-bottom", "in-top"],
     ["node-approval-business-owner-approval", "node-approval-escalate-exception", "Overdue", "feedback", "out-bottom", "in-top"]
   ].map(([source, target, label, type, sourceHandle, targetHandle]) => ({

@@ -102,8 +102,10 @@ export function Inspector() {
   );
   const approvalCreator = approvalData?.creator ?? "";
   const approvalApprover = approvalData?.approver || (node ? getApprovalNodeApprover(node) : "");
-  const canEditWorkflowDocuments = workflow.flowKind !== "approval_chain" || !workflow.owner || isSameUser(workflow.owner, currentUser?.name, currentUser?.email);
-  const canManageApprovalChain = workflow.flowKind !== "approval_chain" || !workflow.owner || isSameUser(workflow.owner, currentUser?.name, currentUser?.email);
+  const inspectorRole = getNodeAccessRole(workflow, node, currentUser);
+  const canEditWorkflow = inspectorRole === "manager";
+  const canEditWorkflowDocuments = canEditWorkflow;
+  const canManageApprovalChain = workflow.flowKind !== "approval_chain" || canEditWorkflow;
   const hasCreatorApprovalRole = workflow.flowKind === "approval_chain" && Boolean(node && (!approvalCreator || isSameUser(approvalCreator, currentUser?.name, currentUser?.email)));
   const hasApproverApprovalRole = workflow.flowKind === "approval_chain" && Boolean(node && approvalApprover && isSameUser(approvalApprover, currentUser?.name, currentUser?.email));
   const hasDualApprovalRoles = hasCreatorApprovalRole && hasApproverApprovalRole;
@@ -123,7 +125,8 @@ export function Inspector() {
   const canEditApprovalSquare = workflow.flowKind !== "approval_chain" || !node || (hasCreatorApprovalRole && (!hasDualApprovalRoles || activeApprovalRole === "creator"));
   const canReviewApprovalSquare = hasApproverApprovalRole && (!hasDualApprovalRoles || activeApprovalRole === "approver");
   const canSaveApprovalSquare = Boolean(node && workflow.flowKind === "approval_chain" && (canEditApprovalSquare || canReviewApprovalSquare));
-  const inspectorRole = getNodeAccessRole(workflow, node, currentUser);
+  const showApprovalCreatorControls = hasCreatorApprovalRole && (!hasDualApprovalRoles || activeApprovalRole === "creator");
+  const showApprovalReviewControls = hasApproverApprovalRole && (!hasDualApprovalRoles || activeApprovalRole === "approver");
   const roleBannerLabel = workflow.flowKind === "approval_chain" && ((node && hasDualApprovalRoles) || (!node && hasWorkflowDualApprovalRoles)) ? "Creator + Approver" : undefined;
   const roleBannerNote =
     workflow.flowKind === "approval_chain" && node && hasDualApprovalRoles
@@ -291,8 +294,8 @@ export function Inspector() {
           {selectedItem.type === "workflow" && (
         <section className="form-stack inspector-sections">
           <InspectorSection icon={<Settings2 size={16} />} title="Workflow Details">
-            <TextField label="Name" value={workflow.name} onChange={(value) => updateWorkflowMeta({ name: value })} />
-            <TextArea label="Description" value={workflow.description ?? ""} onChange={(value) => updateWorkflowMeta({ description: value })} />
+            <TextField label="Name" value={workflow.name} onChange={(value) => updateWorkflowMeta({ name: value })} disabled={!canEditWorkflow} />
+            <TextArea label="Description" value={workflow.description ?? ""} onChange={(value) => updateWorkflowMeta({ description: value })} disabled={!canEditWorkflow} />
             <ReadOnlyField label="Structure" value={workflow.flowKind === "approval_chain" ? "Approval chain" : "AI workflow"} />
             {workflow.flowKind === "approval_chain" ? (
               <SelectField
@@ -301,18 +304,22 @@ export function Inspector() {
                 options={APPROVAL_CHAIN_TYPE_OPTIONS.map((option) => option.id)}
                 labels={Object.fromEntries(APPROVAL_CHAIN_TYPE_OPTIONS.map((option) => [option.id, option.label]))}
                 onChange={(value) => updateWorkflowMeta({ approvalChainType: value as ApprovalChainType })}
+                disabled={!canEditWorkflow}
               />
             ) : null}
-            <TextField label="Version" value={workflow.version} onChange={(value) => updateWorkflowMeta({ version: value })} />
             <SelectField
               label="Status"
               value={workflow.status}
               options={["draft", "in_review", "approved", "archived"]}
               onChange={(value) => updateWorkflowMeta({ status: value as WorkflowStatus })}
+              disabled={!canEditWorkflow}
             />
-            <TextField label="Owner" value={workflow.owner ?? ""} onChange={(value) => updateWorkflowMeta({ owner: value })} />
-            <TextField label="Team" value={workflow.team ?? ""} onChange={(value) => updateWorkflowMeta({ team: value })} />
-            <TextField label="Tags" value={workflow.tags.join(", ")} onChange={(value) => updateWorkflowMeta({ tags: splitTags(value) })} />
+            <AdvancedInspectorSection>
+              <TextField label="Version" value={workflow.version} onChange={(value) => updateWorkflowMeta({ version: value })} disabled={!canEditWorkflow} />
+              <TextField label="Owner" value={workflow.owner ?? ""} onChange={(value) => updateWorkflowMeta({ owner: value })} disabled={!canEditWorkflow} />
+              <TextField label="Team" value={workflow.team ?? ""} onChange={(value) => updateWorkflowMeta({ team: value })} disabled={!canEditWorkflow} />
+              <TextField label="Tags" value={workflow.tags.join(", ")} onChange={(value) => updateWorkflowMeta({ tags: splitTags(value) })} disabled={!canEditWorkflow} />
+            </AdvancedInspectorSection>
           </InspectorSection>
           <WorkflowDocumentManager
             workflow={workflow}
@@ -322,7 +329,7 @@ export function Inspector() {
           />
           {workflow.flowKind === "approval_chain" ? (
             <>
-              <ApprovalPublishPanel workflow={workflow} />
+              {canManageApprovalChain ? <ApprovalPublishPanel workflow={workflow} /> : null}
               {hasWorkflowApproverRole ? (
                 <ApproverAssignmentPanel
                   nodes={workflowApproverNodes}
@@ -334,21 +341,20 @@ export function Inspector() {
                   }
                 />
               ) : null}
-              <ApproverTable
-                approvalChainType={workflow.approvalChainType ?? "underwriting"}
-                approvers={chainApprovers}
-                disabled={!canManageApprovalChain}
-                onAdd={(input) => {
-                  if (!canManageApprovalChain) return;
-                  insertApprover(input);
-                  setApprovers(listApprovers());
-                }}
-                onDelete={(id) => {
-                  if (!canManageApprovalChain) return;
-                  deleteApprover(id);
-                  setApprovers(listApprovers());
-                }}
-              />
+              {canManageApprovalChain ? (
+                <ApproverTable
+                  approvalChainType={workflow.approvalChainType ?? "underwriting"}
+                  approvers={chainApprovers}
+                  onAdd={(input) => {
+                    insertApprover(input);
+                    setApprovers(listApprovers());
+                  }}
+                  onDelete={(id) => {
+                    deleteApprover(id);
+                    setApprovers(listApprovers());
+                  }}
+                />
+              ) : null}
             </>
           ) : null}
           <div className="inspector-summary">
@@ -374,7 +380,7 @@ export function Inspector() {
                   onActiveRoleChange={setActiveApprovalRole}
                 />
               </InspectorSection>
-              <InspectorSection icon={<Settings2 size={16} />} title="Creator Setup">
+              {showApprovalCreatorControls ? <InspectorSection icon={<Settings2 size={16} />} title="Creator Setup">
                 <TextField label="Name" value={node.data.label} onChange={(value) => updateNode(node.id, { label: value })} disabled={!canEditApprovalSquare} />
                 {approvalCreator ? (
                   <ReadOnlyField label="Creator" value={approvalCreator} />
@@ -411,7 +417,16 @@ export function Inspector() {
                 <TextArea label="Instructions" value={approvalData?.instructions ?? ""} onChange={(value) => updateNodeConfiguration(node.id, "instructions", value)} disabled={!canEditApprovalSquare} />
                 <ReadOnlyField label="Current status" value={formatApprovalStatus(approvalData?.status ?? "not_reviewed")} />
                 <ReadOnlyField label="Decision" value={formatApprovalStatus(approvalData?.decision || "pending")} />
-              </InspectorSection>
+              </InspectorSection> : (
+                <InspectorSection icon={<Eye size={16} />} title="Review Brief">
+                  <ReadOnlyField label="Name" value={node.data.label} />
+                  <ReadOnlyField label="Creator" value={approvalCreator || "Unassigned"} />
+                  <ReadOnlyField label="Description" value={approvalData?.description || "No description provided."} />
+                  <ReadOnlyField label="Due date" value={approvalData?.dueDate || "No due date"} />
+                  <ReadOnlyField label="Instructions" value={approvalData?.instructions || "No instructions provided."} />
+                  <ReadOnlyField label="Current status" value={formatApprovalStatus(approvalData?.status ?? "not_reviewed")} />
+                </InspectorSection>
+              )}
               <NodeDocumentManager
                 workflow={workflow}
                 node={node}
@@ -421,7 +436,7 @@ export function Inspector() {
                 onAttachDocument={(document) => linkDocumentToNodes(document, [node.id])}
                 onUnlinkDocument={(documentId) => unlinkDocumentFromNode(documentId, node.id)}
               />
-              <ApprovalDecisionPanel
+              {showApprovalReviewControls ? <ApprovalDecisionPanel
                 status={approvalData?.status ?? "not_reviewed"}
                 approver={approvalApprover}
                 canReview={canReviewApprovalSquare}
@@ -434,7 +449,7 @@ export function Inspector() {
                 comment={approvalReviewComment}
                 onCommentChange={setApprovalReviewComment}
                 onDecision={setApprovalDecision}
-              />
+              /> : null}
               <InspectorSection icon={<Save size={16} />} title="Save and Audit">
                 <ReadOnlyField label="Audit trail" value={`${approvalData?.auditTrail.length ?? 0} event${approvalData?.auditTrail.length === 1 ? "" : "s"}`} />
                 <div className="approval-save-panel">
@@ -452,17 +467,19 @@ export function Inspector() {
                 <TextField label="Name" value={node.data.label} onChange={(value) => updateNode(node.id, { label: value })} />
                 <TextArea label="Description" value={node.data.description ?? ""} onChange={(value) => updateNode(node.id, { description: value })} />
                 <ReadOnlyField label="Category" value={CATEGORY_LABELS[node.data.category]} />
-                <TextField label="Owner" value={node.data.owner ?? ""} onChange={(value) => updateNode(node.id, { owner: value })} />
-                <TextField label="Technology" value={node.data.technology ?? ""} onChange={(value) => updateNode(node.id, { technology: value })} />
                 <SelectField
                   label="Status"
                   value={node.data.status ?? "not_started"}
                   options={["not_started", "in_progress", "ready", "needs_review", "blocked"]}
                   onChange={(value) => updateNode(node.id, { status: value as never })}
                 />
-                <TextField label="Tags" value={(node.data.tags ?? []).join(", ")} onChange={(value) => updateNode(node.id, { tags: splitTags(value) })} />
-                <TextField label="Documentation URL" value={node.data.documentationUrl ?? ""} onChange={(value) => updateNode(node.id, { documentationUrl: value })} />
-                <TextArea label="Notes" value={node.data.notes ?? ""} onChange={(value) => updateNode(node.id, { notes: value })} />
+                <AdvancedInspectorSection>
+                  <TextField label="Owner" value={node.data.owner ?? ""} onChange={(value) => updateNode(node.id, { owner: value })} />
+                  <TextField label="Technology" value={node.data.technology ?? ""} onChange={(value) => updateNode(node.id, { technology: value })} />
+                  <TextField label="Tags" value={(node.data.tags ?? []).join(", ")} onChange={(value) => updateNode(node.id, { tags: splitTags(value) })} />
+                  <TextField label="Documentation URL" value={node.data.documentationUrl ?? ""} onChange={(value) => updateNode(node.id, { documentationUrl: value })} />
+                  <TextArea label="Notes" value={node.data.notes ?? ""} onChange={(value) => updateNode(node.id, { notes: value })} />
+                </AdvancedInspectorSection>
               </InspectorSection>
               <NodeDocumentManager
                 workflow={workflow}
@@ -1769,6 +1786,18 @@ function InspectorSection({ title, icon, children }: { title: string; icon: Reac
       <SectionTitle title={title} icon={icon} />
       <div className="inspector-section-body">{children}</div>
     </div>
+  );
+}
+
+function AdvancedInspectorSection({ children }: { children: ReactNode }) {
+  return (
+    <details className="inspector-advanced">
+      <summary>
+        <Settings2 size={14} />
+        Advanced
+      </summary>
+      <div>{children}</div>
+    </details>
   );
 }
 

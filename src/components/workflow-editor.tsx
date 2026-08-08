@@ -28,6 +28,7 @@ export function WorkflowEditor({ workflowId }: { workflowId?: string }) {
   const inspectorCollapsed = useWorkflowStore((state) => state.inspectorCollapsed);
   const inspectorExpanded = useWorkflowStore((state) => state.inspectorExpanded);
   const validationOpen = useWorkflowStore((state) => state.validationOpen);
+  const validationIssues = useWorkflowStore((state) => state.validationIssues);
   const setWorkflow = useWorkflowStore((state) => state.setWorkflow);
   const setSaveStatus = useWorkflowStore((state) => state.setSaveStatus);
   const duplicateSelected = useWorkflowStore((state) => state.duplicateSelected);
@@ -152,9 +153,9 @@ export function WorkflowEditor({ workflowId }: { workflowId?: string }) {
         libraryCollapsed ? "library-collapsed" : "",
         inspectorCollapsed ? "inspector-collapsed" : "",
         inspectorExpanded ? "inspector-expanded" : "",
-        validationOpen ? "validation-open" : ""
+        validationOpen && validationIssues.length ? "validation-open" : ""
       ].join(" "),
-    [inspectorCollapsed, inspectorExpanded, libraryCollapsed, validationOpen]
+    [inspectorCollapsed, inspectorExpanded, libraryCollapsed, validationIssues.length, validationOpen]
   );
 
   if (!repositoryReady) {

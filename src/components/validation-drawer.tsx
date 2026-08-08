@@ -12,19 +12,23 @@ export function ValidationDrawer() {
     return <section className="validation-drawer compact" aria-label="Validation" />;
   }
 
+  if (!issues.length) {
+    return (
+      <section className="validation-drawer validation-passed" aria-label="Validation passed">
+        <CheckCircle2 size={15} />
+        <strong>Validation passed</strong>
+        <span>No issues found.</span>
+      </section>
+    );
+  }
+
   return (
     <section className="validation-drawer" aria-label="Validation">
       <header>
         <strong>Validation</strong>
-        <span>{issues.length ? `${issues.length} issues` : "No issues"}</span>
+        <span>{`${issues.length} issues`}</span>
       </header>
       <div className="validation-list">
-        {!issues.length && (
-          <article className="validation-empty">
-            <CheckCircle2 size={18} />
-            <span>The flow passes the current validation rules.</span>
-          </article>
-        )}
         {issues.map((issue, index) => (
           <button
             type="button"

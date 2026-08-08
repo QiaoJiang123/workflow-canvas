@@ -39,9 +39,9 @@ export function WorkflowNodeComponent({ data, selected }: NodeProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [iconsOpen, setIconsOpen] = useState(false);
-  const inputs = definition?.inputs ?? [];
-  const outputs = definition?.outputs ?? [];
   const isApprovalChainNode = node.flowKind === "approval_chain";
+  const inputs = isApprovalChainNode ? [{ id: "in", label: "Input" }] : definition?.inputs ?? [];
+  const outputs = isApprovalChainNode ? [{ id: "out", label: "Output" }] : definition?.outputs ?? [];
   const approvalStatus = isApprovalChainNode ? normalizeApprovalNodeStatus(node.configuration, node.status) : "";
 
   return (

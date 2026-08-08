@@ -14,6 +14,7 @@ import {
   Database,
   FileText,
   GitBranch,
+  ChevronDown,
   ListChecks,
   PlayCircle,
   Route,
@@ -179,45 +180,47 @@ export function AgentsPage() {
 
         <section className="agent-card-grid" aria-label="Created agents">
           {agentDetails.map((agent) => (
-            <article className="agent-roster-card" key={agent.role}>
-              <header>
+            <details className="agent-roster-card" key={agent.role}>
+              <summary>
                 <span aria-hidden="true">{agent.icon}</span>
                 <div>
                   <strong>{agent.label}</strong>
-                  <small>{agent.role}</small>
+                  <small>{agent.scope}</small>
                 </div>
-              </header>
-              <p>{agent.scope}</p>
-              <div className="agent-card-section">
-                <h2>Workflow</h2>
-                <ol>
-                  {agent.workflow.map((step) => (
-                    <li key={step}>{step}</li>
-                  ))}
-                </ol>
-              </div>
-              <div className="agent-card-section">
-                <h2>Outputs</h2>
-                <div className="agent-chip-row">
-                  {agent.outputs.map((output) => (
-                    <span key={output}>{output}</span>
-                  ))}
+                <ChevronDown className="agent-card-chevron" size={16} aria-hidden="true" />
+              </summary>
+              <div className="agent-roster-content">
+                <div className="agent-card-section">
+                  <h2>Workflow</h2>
+                  <ol>
+                    {agent.workflow.map((step) => (
+                      <li key={step}>{step}</li>
+                    ))}
+                  </ol>
                 </div>
-              </div>
-              <div className="agent-card-section">
-                <h2>Capabilities</h2>
-                <div className="agent-chip-row">
-                  {(registeredCapabilities.get(agent.role) ?? []).map((capability) => (
-                    <span key={capability.id}>{capability.label}</span>
-                  ))}
-                  {!registeredCapabilities.get(agent.role)?.length && <span>System orchestration</span>}
+                <div className="agent-card-section">
+                  <h2>Outputs</h2>
+                  <div className="agent-chip-row">
+                    {agent.outputs.map((output) => (
+                      <span key={output}>{output}</span>
+                    ))}
+                  </div>
                 </div>
+                <div className="agent-card-section">
+                  <h2>Capabilities</h2>
+                  <div className="agent-chip-row">
+                    {(registeredCapabilities.get(agent.role) ?? []).map((capability) => (
+                      <span key={capability.id}>{capability.label}</span>
+                    ))}
+                    {!registeredCapabilities.get(agent.role)?.length && <span>System orchestration</span>}
+                  </div>
+                </div>
+                <footer>
+                  <CheckCircle2 size={14} />
+                  <span>{agent.guardrail}</span>
+                </footer>
               </div>
-              <footer>
-                <CheckCircle2 size={14} />
-                <span>{agent.guardrail}</span>
-              </footer>
-            </article>
+            </details>
           ))}
         </section>
 

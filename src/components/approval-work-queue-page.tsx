@@ -34,6 +34,7 @@ export function ApprovalWorkQueuePage() {
   const [items, setItems] = useState<ApprovalQueueItem[]>([]);
   const [currentUserName, setCurrentUserName] = useState("");
   const [query, setQuery] = useState("");
+  const [scope, setScope] = useState<"mine" | "all">("mine");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -56,16 +57,17 @@ export function ApprovalWorkQueuePage() {
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    const sorted = [...items].sort((a, b) => Number(b.assignedToMe) - Number(a.assignedToMe) || a.status.localeCompare(b.status) || a.squareName.localeCompare(b.squareName));
+    const scoped = scope === "mine" ? items.filter((item) => item.assignedToMe) : items;
+    const sorted = [...scoped].sort((a, b) => Number(b.assignedToMe) - Number(a.assignedToMe) || a.status.localeCompare(b.status) || a.squareName.localeCompare(b.squareName));
     if (!normalized) return sorted;
     return sorted.filter((item) =>
       [item.workflowName, item.squareName, item.approver, item.creator, item.type, item.status, item.description]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(normalized))
     );
-  }, [items, query]);
+  }, [items, query, scope]);
 
-  const assignedCount = filtered.filter((item) => item.assignedToMe).length;
+  const assignedCount = items.filter((item) => item.assignedToMe).length;
 
   if (loading) {
     return <LoadingFlow title="Loading approvals..." detail="Finding approval squares, assignees, documents, and due dates." />;
@@ -98,10 +100,16 @@ export function ApprovalWorkQueuePage() {
             <h1>Approval queue</h1>
             <p>{`${filtered.length} approval square${filtered.length === 1 ? "" : "s"} visible.`}</p>
           </div>
-          <label className="workflow-search">
-            <Search size={15} aria-hidden="true" />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search approvals" />
-          </label>
+          <div className="queue-controls">
+            <div className="segmented-control" role="group" aria-label="Approval queue scope">
+              <button type="button" className={scope === "mine" ? "active" : ""} onClick={() => setScope("mine")}>Assigned to me</button>
+              <button type="button" className={scope === "all" ? "active" : ""} onClick={() => setScope("all")}>All visible</button>
+            </div>
+            <label className="workflow-search">
+              <Search size={15} aria-hidden="true" />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search approvals" />
+            </label>
+          </div>
         </div>
 
         {filtered.length ? (
@@ -113,6 +121,7 @@ export function ApprovalWorkQueuePage() {
                     {item.status === "approved" ? <CheckCircle2 size={13} /> : <Clock3 size={13} />}
                     {item.status.replaceAll("_", " ")}
                   </span>
+                  <small className="approval-workflow-name">{item.workflowName}</small>
                   <strong>{item.squareName}</strong>
                   <p>{item.description || "No approval description yet."}</p>
                 </div>
@@ -146,7 +155,11 @@ export function ApprovalWorkQueuePage() {
             ))}
           </div>
         ) : (
-          <div className="workflow-empty-state">No approval squares are available yet.</div>
+          <div className="workflow-empty-state rich-empty-state">
+            <UserCheck size={20} />
+            <strong>{scope === "mine" ? "No approvals assigned to you" : "No approval squares available"}</strong>
+            <span>{query ? "Try a different search." : "Your queue is clear."}</span>
+          </div>
         )}
       </section>
     </main>

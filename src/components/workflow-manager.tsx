@@ -22,6 +22,7 @@ import {
   FileText,
   GitBranch,
   Layers3,
+  MoreHorizontal,
   Search,
   Trash2,
   UserCheck,
@@ -29,7 +30,7 @@ import {
   Workflow as WorkflowIcon
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const repository = new BrowserWorkflowRepository();
 const templateOptions = [
@@ -49,10 +50,28 @@ export function WorkflowManager() {
   const [templateId, setTemplateId] = useState<TemplateId>("claims");
   const [approvalChainType, setApprovalChainType] = useState<ApprovalChainType>("underwriting");
   const [search, setSearch] = useState("");
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void loadWorkflows();
   }, []);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    function closeMenu(event: PointerEvent) {
+      if (!moreRef.current?.contains(event.target as Node)) setMoreOpen(false);
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setMoreOpen(false);
+    }
+    window.addEventListener("pointerdown", closeMenu);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("pointerdown", closeMenu);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [moreOpen]);
 
   const stats = useMemo(
     () => ({
@@ -168,26 +187,35 @@ export function WorkflowManager() {
             <UserCheck size={16} />
             My Approvals
           </button>
-          <button className="secondary-action" type="button" onClick={() => router.push("/documents")}>
+          <button className="secondary-action manager-documents-action" type="button" onClick={() => router.push("/documents")}>
             <FileText size={16} />
             Documents
           </button>
-          <button className="secondary-action" type="button" onClick={() => router.push("/agents")}>
-            <Bot size={16} />
-            Agents
-          </button>
-          <button className="secondary-action" type="button" onClick={() => router.push("/docs")}>
-            <BookOpenText size={16} />
-            Docs
-          </button>
-          <button className="secondary-action" type="button" onClick={() => router.push("/instructions")}>
-            <BookOpenText size={16} />
-            Instructions
-          </button>
           <button className="primary-action" type="button" onClick={createWorkflow}>
             <FilePlus2 size={16} />
-            + Create
+            Create
           </button>
+          <div className="manager-more" ref={moreRef}>
+            <button
+              className="secondary-action icon-only"
+              type="button"
+              aria-label="More pages"
+              title="More pages"
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              onClick={() => setMoreOpen((current) => !current)}
+            >
+              <MoreHorizontal size={17} />
+            </button>
+            {moreOpen ? (
+              <div className="manager-more-menu" role="menu" aria-label="More pages">
+                <button className="manager-documents-menu-action" type="button" role="menuitem" onClick={() => router.push("/documents")}><FileText size={15} />Documents</button>
+                <button type="button" role="menuitem" onClick={() => router.push("/agents")}><Bot size={15} />Agents</button>
+                <button type="button" role="menuitem" onClick={() => router.push("/docs")}><BookOpenText size={15} />Technical docs</button>
+                <button type="button" role="menuitem" onClick={() => router.push("/instructions")}><BookOpenText size={15} />Instructions</button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </header>
 
@@ -205,7 +233,11 @@ export function WorkflowManager() {
           </div>
 
           {filteredWorkflows.length === 0 ? (
-            <div className="workflow-empty-state">No AI workflows or approval chains match your search.</div>
+            <div className="workflow-empty-state rich-empty-state">
+              <Search size={20} />
+              <strong>No matching flows</strong>
+              <span>Try a different search or create a new workflow.</span>
+            </div>
           ) : (
             <div className="workflow-table">
               {filteredWorkflows.map((workflow) => (

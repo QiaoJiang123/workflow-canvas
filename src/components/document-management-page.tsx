@@ -85,17 +85,17 @@ export function DocumentManagementPage() {
             </div>
             {filtered.map((document) => (
               <div className="management-row" key={document.id}>
-                <span>
+                <span data-label="Document">
                   <strong>{document.title}</strong>
                   <small>{document.summary || "No summary yet."}</small>
                 </span>
-                <button type="button" onClick={() => router.push(`/workflows/${document.workflowId}`)}>
+                <button data-label="Workflow" type="button" onClick={() => router.push(`/workflows/${document.workflowId}`)}>
                   <Workflow size={14} />
                   {workflowNames[document.workflowId] ?? document.workflowId}
                 </button>
-                <span>{document.nodeId ?? "Workflow-level"}</span>
-                <span>{document.documentType.toUpperCase()}</span>
-                <a href={document.url} target="_blank" rel="noreferrer">
+                <span data-label="Square">{document.nodeId ?? "Workflow-level"}</span>
+                <span data-label="Type">{document.documentType.toUpperCase()}</span>
+                <a data-label="Open" href={document.url} target="_blank" rel="noreferrer">
                   <ExternalLink size={14} />
                   Open
                 </a>
@@ -103,7 +103,11 @@ export function DocumentManagementPage() {
             ))}
           </div>
         ) : (
-          <div className="workflow-empty-state">No linked documents are available yet.</div>
+          <div className="workflow-empty-state rich-empty-state">
+            <FileText size={20} />
+            <strong>No linked documents</strong>
+            <span>Documents assigned to accessible workflows will appear here.</span>
+          </div>
         )}
       </section>
     </main>

@@ -3,6 +3,7 @@
 import { useWorkflowStore } from "@/store/use-workflow-store";
 import { workflowExportSchema } from "@/domain/schema";
 import { createFullWorkflowImage, createWorkflowPdf } from "@/lib/pdf-export";
+import { BrowserWorkflowRepository } from "@/lib/workflow-repository";
 import { AuthStatus } from "./auth-status";
 import { toPng } from "html-to-image";
 import {
@@ -54,6 +55,18 @@ export function EditorHeader({ onImport }: { onImport: (json: string) => void })
   const [menuOpen, setMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  async function saveNow() {
+    useWorkflowStore.getState().setSaveStatus("saving");
+    try {
+      await new BrowserWorkflowRepository().save(useWorkflowStore.getState().workflow);
+      useWorkflowStore.getState().setSaveStatus("saved");
+      setNotice("Saved workflow");
+    } catch (error) {
+      useWorkflowStore.getState().setSaveStatus("error");
+      setNotice(error instanceof Error ? error.message : "Save failed");
+    }
+  }
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -155,11 +168,9 @@ export function EditorHeader({ onImport }: { onImport: (json: string) => void })
       </span>
       <AuthStatus compact />
       <div className="header-actions" role="toolbar" aria-label="Workflow actions">
-        <IconButton label="Flow manager" onClick={() => window.location.assign("/workflows")} icon={<LayoutDashboard size={16} />} />
-        <IconButton label="Add stage rectangle" onClick={addGroup} icon={<Layers3 size={16} />} />
-        <IconButton label="Undo" onClick={undo} disabled={!past.length} icon={<RotateCcw size={16} />} />
-        <IconButton label="Redo" onClick={redo} disabled={!future.length} icon={<RotateCw size={16} />} />
-        <IconButton label="Export PDF" onClick={exportPdf} icon={<FileText size={16} />} />
+        <HeaderAction label="Save" onClick={() => void saveNow()} icon={<Save size={16} />} />
+        <HeaderAction label="Add stage" onClick={addGroup} icon={<Layers3 size={16} />} />
+        <HeaderAction label="Export PDF" onClick={() => void exportPdf()} icon={<FileText size={16} />} />
         <div className="header-more" ref={menuRef}>
           <button
             className="icon-button"
@@ -174,6 +185,9 @@ export function EditorHeader({ onImport }: { onImport: (json: string) => void })
           </button>
           {menuOpen ? (
             <div className="header-more-menu" role="menu" aria-label="More workflow actions">
+              <MenuAction icon={<LayoutDashboard size={15} />} label="Flow manager" onClick={() => runMenuAction(() => window.location.assign("/workflows"))} />
+              <MenuAction icon={<RotateCcw size={15} />} label="Undo" onClick={() => runMenuAction(undo)} disabled={!past.length} />
+              <MenuAction icon={<RotateCw size={15} />} label="Redo" onClick={() => runMenuAction(redo)} disabled={!future.length} />
               <MenuAction icon={<BookOpenText size={15} />} label="Docs" onClick={() => runMenuAction(() => window.location.assign("/docs"))} />
               <MenuAction icon={<PanelLeftClose size={15} />} label="Toggle left panel" onClick={() => runMenuAction(toggleLibrary)} />
               <MenuAction icon={<PanelRightClose size={15} />} label="Toggle right panel" onClick={() => runMenuAction(toggleInspector)} />
@@ -211,9 +225,18 @@ function slugify(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
-function MenuAction({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
+function MenuAction({ icon, label, onClick, disabled = false }: { icon: ReactNode; label: string; onClick: () => void; disabled?: boolean }) {
   return (
-    <button className="header-more-item" type="button" role="menuitem" onClick={onClick}>
+    <button className="header-more-item" type="button" role="menuitem" onClick={onClick} disabled={disabled}>
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function HeaderAction({ label, icon, onClick }: { label: string; icon: ReactNode; onClick: () => void }) {
+  return (
+    <button className="header-action" type="button" onClick={onClick} title={label}>
       {icon}
       <span>{label}</span>
     </button>
@@ -222,22 +245,4 @@ function MenuAction({ icon, label, onClick }: { icon: ReactNode; label: string; 
 
 function MenuDivider() {
   return <div className="header-more-divider" role="separator" />;
-}
-
-function IconButton({
-  label,
-  icon,
-  onClick,
-  disabled = false
-}: {
-  label: string;
-  icon: React.ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button className="icon-button" type="button" aria-label={label} title={label} onClick={onClick} disabled={disabled}>
-      {icon}
-    </button>
-  );
 }
