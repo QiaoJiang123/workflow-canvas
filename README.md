@@ -18,6 +18,12 @@ Open `http://localhost:3001` if the dev server is started with `PORT=3001 npm ru
 
 Demo users use password `123456`.
 
+Git pushes are configured to use the repository SSH remote:
+
+```bash
+git@github.com:QiaoJiang123/workflow-canvas.git
+```
+
 ## Main Routes
 
 - `/login`: demo authentication.
